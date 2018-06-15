@@ -46,7 +46,7 @@ DeviceAddress insideThermometer;
 
 // LCD definition
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-
+#define timelight 10000  //mise en veille ecran après X seconde
 
 
 /* Useful Constants */
@@ -103,7 +103,9 @@ char message2[16] = "";  //pour stoker message ligne 2 du LCD
 unsigned long  currentTime;
 unsigned long  StartTime = 0;
 unsigned long  StartTimeManual = 0;
+unsigned long  StarTimeLight =0;
 
+//Encoder rotatif Pin definition 
 const int PinA = 3;  // Used for generating interrupts using CLK signal
 const int PinB = 4;  // Used for reading DT signal
 const int PinSW = 10;  // Used for the push button switch
@@ -111,7 +113,9 @@ const int PinSW = 10;  // Used for the push button switch
 int lastCount = 50;
 
 // Updated by the ISR (Interrupt Service Routine)
-volatile int virtualPosition = 50; //non utilisé ici
+volatile int virtualPosition = 50; 
+volatile int lastPosition = 50;
+
 
 // ------------------------------------------------------------------
 // INTERRUPT     INTERRUPT     INTERRUPT     INTERRUPT     INTERRUPT 
@@ -137,6 +141,8 @@ void isr ()  {
     lastInterruptTime = interruptTime;
   }
 }
+
+
 
 // function to print the temperature for a device
 float printTemperature(DeviceAddress deviceAddress)
@@ -185,6 +191,7 @@ void setup() {
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print(" Starting...");
+  StarTimeLight=millis();
   Serial.println("Starting");
     // 1-wire locate devices on the bus
   Serial.print("Locating devices...");
@@ -209,8 +216,6 @@ void setup() {
   Serial.print("Device 0 Resolution: ");
   Serial.print(sensors.getResolution(insideThermometer), DEC); 
   Serial.println();
-  
-  
   delay(1000);
   lcd.clear();
   
@@ -229,7 +234,7 @@ void setup() {
   // Attach the routine to service the interrupts
   attachInterrupt(digitalPinToInterrupt(PinA), isr, LOW);
 
-  Serial.println("Debug 1");
+  //Serial.println("Debug 1");
     
   //Initier tableau des jour pour activer Chlore
   //utiliser le num du jour 0 Dimanche
@@ -242,7 +247,7 @@ void setup() {
    HeureDistrib=0; //Heure de distribution, par exemple 20h
    previous_dayWeek=9; // JOur fictif pour permettre un premier check
    FlagStart="N";
-   Serial.println("Debug 2");
+   //Serial.println("Debug 2");
 
 }
 
@@ -279,8 +284,22 @@ void loop() {
       lcd.print(TempC);
       lcd.print("C");
       //lcd.print(virtualPosition); 
+     
+      
+      if ( millis()-StarTimeLight > timelight ){
+          StarTimeLight=millis();
+          lcd.noBacklight(); // turn off backlight
+      } 
       
     }
+
+     if ( virtualPosition != lastPosition ) { // curseur bouge, on allume l'ecran et reinitialise minuterie LCD
+        lcd.backlight();
+        StarTimeLight=millis();
+        lastPosition=virtualPosition;
+        
+      }
+      
 //    Serial.print("Day  :");
 //    Serial.println(now.dayOfTheWeek()); 
 //    Serial.print("previous day :");
@@ -337,12 +356,17 @@ void loop() {
     
     
     //Si on appuis sur le bouton, 
+    //allume ecran + reinitialise compteur ecran
     //clean LCD, star compteur, moteur
     //Si plus de pression, stop compteur, affichier le compteur
     
     if ((!digitalRead(PinSW))) {
       //virtualPosition = 50;
       lcd.clear();
+      
+      lcd.backlight();
+      
+      
       lcd.setCursor(2, 0);
       lcd.print ("Manual action");
       StartTimeManual=millis(); // prise mesure start
@@ -366,6 +390,7 @@ void loop() {
         Serial.println("s");
         delay(4000);
         lcd.clear();
+        StarTimeLight=millis();
     }
 
     
