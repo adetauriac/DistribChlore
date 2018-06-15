@@ -7,7 +7,7 @@
 //  SCL : A5
 //  Ecran LCD I2C
 //  RTC ds3231 I2C
-//  DS18B20 Temperature Piscine 
+//  DS18B20 Temperature Piscine sur D2
 //
 //
 //
@@ -20,6 +20,22 @@
 #include "RTClib.h"
 #include <TimerOne.h>
 #include <LiquidCrystal_I2C.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+//1Wire definition 
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 2
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
+
+// arrays to hold device address
+DeviceAddress insideThermometer;
+
 
 
 //Controle du moteur
@@ -122,10 +138,28 @@ void isr ()  {
   }
 }
 
+// function to print the temperature for a device
+float printTemperature(DeviceAddress deviceAddress)
+{
+  // method 1 - slower
+  //Serial.print("Temp C: ");
+  //Serial.print(sensors.getTempC(deviceAddress));
+  //Serial.print(" Temp F: ");
+  //Serial.print(sensors.getTempF(deviceAddress)); // Makes a second call to getTempC and then converts to Fahrenheit
+
+  // method 2 - faster
+  float tempC = sensors.getTempC(deviceAddress);
+  //Serial.print("Temp C: ");
+  //Serial.print(tempC);
+  //Serial.print(" Temp F: ");
+  //Serial.println(DallasTemperature::toFahrenheit(tempC)); // Converts tempC to Fahrenheit
+  return tempC;
+}
+
 
 void setup() {
   Serial.begin(9600);
-  
+
   digitalWrite(moteurENB,LOW); //Moteur A ne tourne pas
   //Direction Moteur A
   digitalWrite(moteurIN1,LOW);
@@ -151,8 +185,32 @@ void setup() {
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print(" Starting...");
-  
   Serial.println("Starting");
+    // 1-wire locate devices on the bus
+  Serial.print("Locating devices...");
+  sensors.begin();
+  Serial.print("Found ");
+  Serial.print(sensors.getDeviceCount(), DEC);
+  Serial.println(" devices.");
+
+  // report parasite power requirements
+  Serial.print("Parasite power is: "); 
+  if (sensors.isParasitePowerMode()) Serial.println("ON");
+  else Serial.println("OFF");
+  if (!sensors.getAddress(insideThermometer, 0)) Serial.println("Unable to find address for Device 0"); 
+ // show the addresses we found on the bus
+  Serial.print("Device 0 Address: ");
+  printAddress(insideThermometer);
+  Serial.println();
+
+  // set the resolution to 9 bit (Each Dallas/Maxim device is capable of several different resolutions)
+  sensors.setResolution(insideThermometer, 9);
+ 
+  Serial.print("Device 0 Resolution: ");
+  Serial.print(sensors.getResolution(insideThermometer), DEC); 
+  Serial.println();
+  
+  
   delay(1000);
   lcd.clear();
   
@@ -190,7 +248,11 @@ void setup() {
 
 
 void loop() {
+    // Interroger Sonde Temperature Piscine
+    sensors.requestTemperatures(); // It responds almost immediately. Let's print out the data
+    float TempC=printTemperature(insideThermometer); // Use a simple function to print out the data
 
+    //Define Date time
     DateTime now = rtc.now();
 
     // Afficher Date et heure si pas d'autre action 
@@ -213,8 +275,10 @@ void loop() {
       lcd.print(":");
       lcd.print(now.second()/10, DEC);
       lcd.print(now.second()%10, DEC);
-      lcd.print("  ");
-      lcd.print(virtualPosition); 
+      lcd.print(" ");
+      lcd.print(TempC);
+      lcd.print("C");
+      //lcd.print(virtualPosition); 
       
     }
 //    Serial.print("Day  :");
@@ -306,4 +370,15 @@ void loop() {
 
     
 //FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP    
+}
+
+
+// function to print a device address
+void printAddress(DeviceAddress deviceAddress)
+{
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    if (deviceAddress[i] < 16) Serial.print("0");
+    Serial.print(deviceAddress[i], HEX);
+  }
 }
