@@ -23,6 +23,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
+
 //1Wire definition 
 // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 2
@@ -51,11 +52,11 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 /* Useful Constants */
 #define SECS_PER_MIN  (60UL)
-#define SECS_PER_HOUR (3600UL)
-#define SECS_PER_DAY  (SECS_PER_HOUR * 24L)
+#define SECS_PER_HOUR (3600ULUR * 24L)
 /* Useful Macros for getting elapsed time */
 #define numberOfSeconds(_time_) (_time_ % SECS_PER_MIN)
-#define numberOfMinutes(_time_) ((_time_ / SECS_PER_MIN) % SECS_PER_MIN)
+#define numberOfMinutes(_time_) ()
+#define SECS_PER_DAY  (SECS_PER_HO(_time_ / SECS_PER_MIN) % SECS_PER_MIN)
 #define numberOfHours(_time_) (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
 #define elapsedDays(_time_) ( _time_ / SECS_PER_DAY)
 
@@ -72,6 +73,7 @@ unsigned long lightDuration = 10L;
 
 // Definition RTC 
 RTC_DS3231 rtc;
+
 
 char daysOfTheWeek[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
 
@@ -98,6 +100,14 @@ int Seconde;
 int HeureDistrib;
 char message1[16] = "";  //pour stoker message ligne 1 du LCD
 char message2[16] = "";  //pour stoker message ligne 2 du LCD
+int delayTime2 = 350; // Delay between shifts
+int i = 0;
+int j = 0;
+int k = 0;
+
+int posMenu = 0; //variable de position dans menu principal
+int posSousMenu[2] = {0, 0}; // tableau pour stocker les positions de chaque sous-menu
+float TempC,TempClock;
 
 
 unsigned long  currentTime;
@@ -248,63 +258,28 @@ void setup() {
    previous_dayWeek=9; // JOur fictif pour permettre un premier check
    FlagStart="N";
    //Serial.println("Debug 2");
+   DateTime now = rtc.now();
 
 }
 
 
 void loop() {
-    // Interroger Sonde Temperature Piscine
-    sensors.requestTemperatures(); // It responds almost immediately. Let's print out the data
-    float TempC=printTemperature(insideThermometer); // Use a simple function to print out the data
-
     //Define Date time
-    DateTime now = rtc.now();
-
-    // Afficher Date et heure si pas d'autre action 
-    if ( FlagStart == "N" ) {
-      lcd.setCursor(0, 0);
-      lcd.print (now.day()/10,DEC);
-      lcd.print (now.day()%10,DEC);
-      lcd.print("/");
-      lcd.print (now.month()/10,DEC);
-      lcd.print (now.month()%10,DEC);
-      lcd.print("/");
-      lcd.print (now.year(),DEC);
-      lcd.print("  ");
-      lcd.setCursor(0, 1);
-      lcd.print (now.hour()/10,DEC);
-      lcd.print (now.hour()%10,DEC);
-      lcd.print(":");
-      lcd.print(now.minute()/10, DEC);
-      lcd.print(now.minute()%10, DEC);
-      lcd.print(":");
-      lcd.print(now.second()/10, DEC);
-      lcd.print(now.second()%10, DEC);
-      lcd.print(" ");
-      lcd.print(TempC);
-      lcd.print("C");
-      //lcd.print(virtualPosition); 
-     
-      
+      DateTime now = rtc.now();
+    
+   
+    navigation();
+    affichage();
+    
+       
       if ( millis()-StarTimeLight > timelight ){
           StarTimeLight=millis();
           lcd.noBacklight(); // turn off backlight
+          posMenu=0;
       } 
-      
-    }
 
-     if ( virtualPosition != lastPosition ) { // curseur bouge, on allume l'ecran et reinitialise minuterie LCD
-        lcd.backlight();
-        StarTimeLight=millis();
-        lastPosition=virtualPosition;
-        
-      }
+
       
-//    Serial.print("Day  :");
-//    Serial.println(now.dayOfTheWeek()); 
-//    Serial.print("previous day :");
-//    Serial.println(previous_dayWeek);
-// 
     //Parcour tableau des jours configuréspour execution si on est sur un nouveau jour
 
     if ( previous_dayWeek != now.dayOfTheWeek() ) {    
@@ -355,43 +330,6 @@ void loop() {
     }
     
     
-    //Si on appuis sur le bouton, 
-    //allume ecran + reinitialise compteur ecran
-    //clean LCD, star compteur, moteur
-    //Si plus de pression, stop compteur, affichier le compteur
-    
-    if ((!digitalRead(PinSW))) {
-      //virtualPosition = 50;
-      lcd.clear();
-      
-      lcd.backlight();
-      
-      
-      lcd.setCursor(2, 0);
-      lcd.print ("Manual action");
-      StartTimeManual=millis(); // prise mesure start
-      lcd.setCursor(0, 1);
-      while (!digitalRead(PinSW)) {
-        Serial.println("Presse");
-        analogWrite(moteurENB,255); //Start moteur
-        lcd.setCursor(0, 1);
-        lcd.print (((millis()-StartTimeManual)/1000) );
-        lcd.print (" s");
-      }
-        analogWrite(moteurENB,0); //Stop Moteur
-        lcd.setCursor(0, 1);
-        lcd.print ("                ");
-        lcd.setCursor(0, 1);
-        sprintf(message2,"Duree : %2d s",((millis()-StartTimeManual)/1000));
-        lcd.print (message2);
-        
-        Serial.print("Durée : ");
-        Serial.print((millis()-StartTimeManual)/1000);
-        Serial.println("s");
-        delay(4000);
-        lcd.clear();
-        StarTimeLight=millis();
-    }
 
     
 //FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP    
@@ -407,3 +345,153 @@ void printAddress(DeviceAddress deviceAddress)
     Serial.print(deviceAddress[i], HEX);
   }
 }
+
+
+void navigation() {
+   //detecter rotation  
+  if ( virtualPosition !=lastPosition){
+    lcd.backlight();
+    StarTimeLight=millis();
+    if  (virtualPosition > lastPosition ) {  //menu suivant
+      posMenu=(posMenu+1 ) %4 ;
+    } else if (virtualPosition < lastPosition ) { //menu precedent
+        if (posMenu == 0) {posMenu=4;}
+        posMenu=(posMenu-1) %4;   
+      }
+    lastPosition=virtualPosition;
+    Serial.print("Position menu : ");
+    Serial.println(posMenu);
+    
+  }
+}
+
+void affichage(){
+    DateTime now = rtc.now();
+    switch (posMenu) { // en fonction du menu 1
+    case 0: // Affichage Date et heures
+      
+      // Afficher Date et heure si pas d'autre action 
+      if ( FlagStart == "N" ) {
+        lcd.setCursor(0, 0);
+        lcd.print (now.day()/10,DEC);
+        lcd.print (now.day()%10,DEC);
+        lcd.print("/");
+        lcd.print (now.month()/10,DEC);
+        lcd.print (now.month()%10,DEC);
+        lcd.print("/");
+        lcd.print (now.year(),DEC);
+        lcd.print("      ");
+        lcd.setCursor(0, 1);
+        lcd.print (now.hour()/10,DEC);
+        lcd.print (now.hour()%10,DEC);
+        lcd.print(":");
+        lcd.print(now.minute()/10, DEC);
+        lcd.print(now.minute()%10, DEC);
+        lcd.print(":");
+        lcd.print(now.second()/10, DEC);
+        lcd.print(now.second()%10, DEC);
+        lcd.print("        ");
+        }
+      break;
+    case 1: // Affichage temperature
+        // Interroger Sonde Temperature Piscine
+         sensors.requestTemperatures(); // It responds almost immediately. Let's print out the data
+         TempC=printTemperature(insideThermometer); // Use a simple function to print out the data
+         
+         
+         lcd.setCursor(0, 0);
+         lcd.print("Piscine : ");
+         lcd.print(TempC);
+         lcd.print("C");
+         lcd.setCursor(0, 1);
+         lcd.print("                ");
+      //lcd.print(virtualPosition); 
+      
+      break;
+    case 2: // menu 2 : Test manuel 
+         
+          //allume ecran + reinitialise compteur ecran
+          //clean LCD, star compteur, moteur
+          //Si plus de pression, stop compteur, affichier le compteur
+        
+        lcd.setCursor(0, 0);
+        lcd.print ("Manual action   ");
+        lcd.setCursor(0,1);
+        lcd.print ("Press to Start...");
+       
+        
+      if ((!digitalRead(PinSW))) {
+       
+        StartTimeManual=millis(); // prise mesure start
+        lcd.setCursor(0, 1);
+        lcd.print ("                ");
+        
+        while (!digitalRead(PinSW)) {
+          Serial.println("Presse");
+          analogWrite(moteurENB,255); //Start moteur
+          lcd.setCursor(0, 1);
+          lcd.print (((millis()-StartTimeManual)/1000) );
+          lcd.print (" s");
+        }
+          analogWrite(moteurENB,0); //Stop Moteur
+          lcd.setCursor(0, 1);
+          lcd.print ("                ");
+          lcd.setCursor(0, 1);
+          sprintf(message2,"Duree : %2d s",((millis()-StartTimeManual)/1000));
+          lcd.print (message2);
+          
+          Serial.print("Durée : ");
+          Serial.print((millis()-StartTimeManual)/1000);
+          Serial.println("s");
+          delay(4000);
+          lcd.clear();
+          StarTimeLight=millis();
+      }
+     break;
+   case 3: // menu 3 afficher config Jour/heure distribution + quantité 
+      lcd.setCursor(0, 0);
+      lcd.print ("   MENU 4       ");
+      lcd.setCursor(0, 1);
+      lcd.print ("                ");  
+     break;
+    }
+
+  }
+
+
+
+
+
+
+void scrollInFromRight (int line, char str1[]) {
+// Written by R. Jordan Kreindler June 2016
+i = strlen(str1);
+for (j = 16; j >= 0; j--) {
+lcd.setCursor(0, line);
+for (k = 0; k <= 15; k++) {
+lcd.print(" "); // Clear line
+}
+lcd.setCursor(j, line);
+lcd.print(str1);
+delay(delayTime2);
+}
+}
+
+
+void scrollInFromLeft (int line, char str1[]) {
+// Written by R. Jordan Kreindler June 2016
+i = 40 - strlen(str1);
+line = line - 1;
+for (j = i; j <= i + 16; j++) {
+for (k = 0; k <= 15; k++) {
+lcd.print(" "); // Clear line
+}
+lcd.setCursor(j, line);
+lcd.print(str1);
+delay(delayTime2);
+}
+}
+
+
+
+
