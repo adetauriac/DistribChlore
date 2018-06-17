@@ -6,7 +6,7 @@
 //  SDA : A4
 //  SCL : A5
 //  Ecran LCD I2C
-//  RTC ds3231 I2C
+//  RTC ds3231 I2C  ==> Librairie RTClib mais modifiée pour ajouter la recupération de la temperature de la carte
 //  DS18B20 Temperature Piscine sur D2
 //
 //
@@ -22,6 +22,8 @@
 #include <LiquidCrystal_I2C.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <EEPROM.h>
+#include "EEPROMAnything.h"
 
 
 //1Wire definition 
@@ -63,8 +65,9 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 // Configuration sauvegardee en EEPROM
 struct config_t
 {
-  long waitingTime;
-  int quantite;
+  long Duree;
+  int Day[7];
+  int Heure[7];
 } configuration;
 
 
@@ -86,6 +89,7 @@ char daysOfTheWeek[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", 
 
 
 int DayDistrib[7];
+int HeureDistrib[7]; // 1 heure par jour de possible, mutlti time impossible
 int previous_dayWeek;
 const long Delais_Moteur = 5000; //en milliseconde
 String FlagStart;
@@ -97,14 +101,13 @@ int Annee;
 int Heure;
 int Minute;
 int Seconde;
-int HeureDistrib;
+
 char message1[16] = "";  //pour stoker message ligne 1 du LCD
 char message2[16] = "";  //pour stoker message ligne 2 du LCD
 int delayTime2 = 350; // Delay between shifts
 int i = 0;
 int j = 0;
 int k = 0;
-
 int posMenu = 0; //variable de position dans menu principal
 int posSousMenu[2] = {0, 0}; // tableau pour stocker les positions de chaque sous-menu
 float TempC,TempClock;
@@ -173,6 +176,9 @@ float printTemperature(DeviceAddress deviceAddress)
 }
 
 
+
+
+
 void setup() {
   Serial.begin(9600);
 
@@ -200,7 +206,11 @@ void setup() {
   lcd.init(); // initialisation de l'afficheur
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print(" Starting...");
+  lcd.print(" Distrib Chlore ");
+  lcd.setCursor(0, 1);
+  lcd.print("     V1.0       ");
+  delay(2000);
+  lcd.print("  Starting...   ");
   StarTimeLight=millis();
   Serial.println("Starting");
     // 1-wire locate devices on the bus
@@ -246,19 +256,26 @@ void setup() {
 
   //Serial.println("Debug 1");
     
-  //Initier tableau des jour pour activer Chlore
+  //Initier tableau des jour et heure pour activer Chlore
   //utiliser le num du jour 0 Dimanche
-  //7 slot, 1 par jour possible, si pas configuré, mise à 9
+  //7 slot, 1 par jour possible, si pas configuré, mise à 9 pour jour et 25 pour Heure
+ 
   for(int compteur = 0 ; compteur < 7 ; compteur++)
   {
       DayDistrib[compteur]=9;
+      HeureDistrib[compteur]=25; 
   }
-   DayDistrib[0]=3; //Initié un jour pour distribution
-   HeureDistrib=0; //Heure de distribution, par exemple 20h
+   DayDistrib[0]=5; //Initié un jour pour distribution
+   HeureDistrib[0]=23; //Heure de distribution, par exemple 20h
    previous_dayWeek=9; // JOur fictif pour permettre un premier check
    FlagStart="N";
    //Serial.println("Debug 2");
    DateTime now = rtc.now();
+
+  
+      
+
+   
 
 }
 
@@ -266,12 +283,13 @@ void setup() {
 void loop() {
     //Define Date time
       DateTime now = rtc.now();
-    
-   
     navigation();
     affichage();
     
-       
+      if ((!digitalRead(PinSW))) {
+        lcd.backlight();
+        StarTimeLight=millis();
+      }
       if ( millis()-StarTimeLight > timelight ){
           StarTimeLight=millis();
           lcd.noBacklight(); // turn off backlight
@@ -285,7 +303,7 @@ void loop() {
     if ( previous_dayWeek != now.dayOfTheWeek() ) {    
       for(int compteur = 0 ; compteur < 7 ; compteur++)   //parcourir le tableau de jour configuré pour distribution 
       {
-        if ( (now.dayOfTheWeek() == DayDistrib[0]) && (HeureDistrib == now.hour() ) && (now.dayOfTheWeek() !=  previous_dayWeek ) ){
+        if ( (now.dayOfTheWeek() == DayDistrib[0]) && (HeureDistrib[0] == now.hour() ) && (now.dayOfTheWeek() !=  previous_dayWeek ) ){
           Serial.print("Nous sommes un ");
           Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
           Serial.println();
@@ -311,7 +329,7 @@ void loop() {
     //Serial.print(FlagStart);
     if (FlagStart == "Y" ) {  //Pour indiquer que le moteur doit tourner en automatique
       if ( ( millis() - StartTime < Delais_Moteur) && FlagStart == "Y" ) {
-        Serial.print("Start Moteur ");
+        Serial.println("Start Moteur ");
         analogWrite(moteurENB,255); 
         sprintf(message1,"Distribution..."); 
         sprintf(message2,"Duree set : %2d s",Delais_Moteur/1000);
@@ -347,16 +365,18 @@ void printAddress(DeviceAddress deviceAddress)
 }
 
 
+
+
 void navigation() {
    //detecter rotation  
   if ( virtualPosition !=lastPosition){
     lcd.backlight();
     StarTimeLight=millis();
     if  (virtualPosition > lastPosition ) {  //menu suivant
-      posMenu=(posMenu+1 ) %4 ;
+      posMenu=(posMenu+1 ) %5 ;
     } else if (virtualPosition < lastPosition ) { //menu precedent
-        if (posMenu == 0) {posMenu=4;}
-        posMenu=(posMenu-1) %4;   
+        if (posMenu == 0) {posMenu=5;}
+        posMenu=(posMenu-1) %5;   
       }
     lastPosition=virtualPosition;
     Serial.print("Position menu : ");
@@ -397,14 +417,16 @@ void affichage(){
         // Interroger Sonde Temperature Piscine
          sensors.requestTemperatures(); // It responds almost immediately. Let's print out the data
          TempC=printTemperature(insideThermometer); // Use a simple function to print out the data
-         
+         TempClock=rtc.getTemperature();
          
          lcd.setCursor(0, 0);
          lcd.print("Piscine : ");
          lcd.print(TempC);
          lcd.print("C");
          lcd.setCursor(0, 1);
-         lcd.print("                ");
+         lcd.print("Boitier : ");
+         lcd.print(TempClock);
+         lcd.print("C");
       //lcd.print(virtualPosition); 
       
       break;
@@ -448,16 +470,60 @@ void affichage(){
           StarTimeLight=millis();
       }
      break;
-   case 3: // menu 3 afficher config Jour/heure distribution + quantité 
+    case 3: // menu 3 test Save EEPROM
       lcd.setCursor(0, 0);
-      lcd.print ("   MENU 4       ");
+      lcd.print ("TEST EEPROM SAVE");
       lcd.setCursor(0, 1);
-      lcd.print ("                ");  
+      lcd.print ("PRESS TO SAVE   ");  
+       //Test EEPROM config and save
+      if ((!digitalRead(PinSW))) { 
+        Serial.println("Save EEPROM");
+        for(int compteur = 0 ; compteur < 7 ; compteur++)
+        {
+          configuration.Day[compteur]=DayDistrib[compteur];
+          configuration.Heure[compteur]=HeureDistrib[compteur];
+          if (configuration.Day[compteur] != 9) {
+            Serial.print("Conf num ");
+            Serial.print(compteur);
+            Serial.print(" : ");
+            Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
+            Serial.print(" / ");
+            Serial.print(HeureDistrib[compteur]);
+            Serial.println("h");
+           
+            
+          }
+        }
+        EEPROM_writeAnything(0, configuration);
+      }
      break;
+    case 4: // menu 4 afficher config EEPROM  
+      lcd.setCursor(0, 0);
+      lcd.print ("LOAD EEPROM...  ");
+      lcd.setCursor(0, 1);
+      lcd.print ("PRESS TO LOAD   ");
+    if ((!digitalRead(PinSW))) { 
+        Serial.println("Read EEPROM"); 
+        EEPROM_readAnything(0, configuration);
+        for(int compteur = 0 ; compteur < 7 ; compteur++)
+          {
+            DayDistrib[compteur]=configuration.Day[compteur];
+            HeureDistrib[compteur]=configuration.Heure[compteur];
+            if (configuration.Day[compteur] != 9) {
+              Serial.print("EEPROM Conf num ");
+              Serial.print(compteur);
+              Serial.print(" : ");
+              Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
+              Serial.print(" / ");
+              Serial.print(HeureDistrib[compteur]);
+              Serial.println("h");
+            }
+          }  
     }
+      break;
 
   }
-
+}
 
 
 
