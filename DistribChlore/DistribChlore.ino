@@ -101,6 +101,7 @@ int Annee;
 int Heure;
 int Minute;
 int Seconde;
+bool Flagjour, Flagheure,Flagminute, Flagquantite = false ;
 
 char message1[16] = "";  //pour stoker message ligne 1 du LCD
 char message2[16] = "";  //pour stoker message ligne 2 du LCD
@@ -108,6 +109,7 @@ int delayTime2 = 350; // Delay between shifts
 int i = 0;
 int j = 0;
 int k = 0;
+int NumberMenu=6;
 int posMenu = 0; //variable de position dans menu principal
 int posSousMenu[2] = {0, 0}; // tableau pour stocker les positions de chaque sous-menu
 float TempC,TempClock;
@@ -373,10 +375,10 @@ void navigation() {
     lcd.backlight();
     StarTimeLight=millis();
     if  (virtualPosition > lastPosition ) {  //menu suivant
-      posMenu=(posMenu+1 ) %5 ;
+      posMenu=(posMenu+1 ) %NumberMenu ;
     } else if (virtualPosition < lastPosition ) { //menu precedent
-        if (posMenu == 0) {posMenu=5;}
-        posMenu=(posMenu-1) %5;   
+        if (posMenu == 0) {posMenu=(NumberMenu);}
+        posMenu=(posMenu-1) %NumberMenu;   
       }
     lastPosition=virtualPosition;
     Serial.print("Position menu : ");
@@ -521,8 +523,137 @@ void affichage(){
           }  
     }
       break;
+    case 5: // Test selecteur jour/heure/quantité
+      lcd.setCursor(0, 0);
+      lcd.print ("Test Config     ");
+      lcd.setCursor(0, 1);
+      lcd.print ("                ");
+      bool EndConfigAlarm=false;
+      
+      if ((!digitalRead(PinSW)) && !Flagjour) { // on active la boucle selecteur jour  
+        Serial.println("Jour :");
+        i=1;
+        bool flag=true;
+        char datelistlcd[7][16] = {
+          "Dimanche",
+          "Lundi   ", 
+          "Mardi   ", 
+          "Mercredi", 
+          "Jeudi   ", 
+          "Vendredi", 
+          "Samedi  "};
+        lcd.setCursor(0, 1);
+        lcd.print(datelistlcd[i]);
+        while (flag) {
+            
+            if  (virtualPosition > lastPosition ) {  //menu suivant
+              i=(i+1 ) %7 ;
+              lcd.setCursor(0, 1);
+              lcd.print(datelistlcd[i]);
 
+            } else if (virtualPosition < lastPosition ) { //menu precedent
+            if (i == 0) {i=7;}
+              i=(i-1) %7;   
+              lcd.setCursor(0, 1);
+              lcd.print(datelistlcd[i]);
+            }
+            lastPosition=virtualPosition;
+            delay(150); //eviter rebond du poussoir avec risque de valider une mauvaise date
+            Serial.println(daysOfTheWeek[i]);
+
+            
+            if ((!digitalRead(PinSW))){
+            //on valide la date, sortir de la boucle
+              flag=false;
+            }
+        
+        }
+        Serial.print("Votre choix : " );
+        Serial.print(daysOfTheWeek[i]);
+        Flagjour=true;
+        
+        // Config heure 
+         if ((!digitalRead(PinSW)) && !Flagheure) { // on active la boucle selecteur jour  
+        Serial.println("Heure :  ");
+        i=00;
+        bool flag=true;
+        //lcd.setCursor(9, 1);
+        lcd.print ("/");
+        
+        lcd.print (i/10,DEC);
+        lcd.print (i%10,DEC);
+        while (flag) {
+            
+            if  (virtualPosition > lastPosition ) {  //menu suivant
+              i=(i+1 ) %24 ;
+              lcd.setCursor(9, 1);
+              lcd.print (i/10,DEC);
+              lcd.print (i%10,DEC);
+
+            } else if (virtualPosition < lastPosition ) { //menu precedent
+              if (i == 0) {i=24;}
+              i=(i-1) %24;   
+              lcd.setCursor(9, 1);
+              lcd.print (i/10,DEC);
+              lcd.print (i%10,DEC);
+            }
+            lastPosition=virtualPosition;
+            delay(150); //eviter rebond du poussoir avec risque de valider une mauvaise date
+            Serial.println(i);
+            if ((!digitalRead(PinSW))){
+            //on valide la date, sortir de la boucle
+              flag=false;
+            }
+        
+        }
+        Serial.print("Votre choix : " );
+        Serial.print(i);
+        Flagheure=true;
+
+         // Config minute 
+         if ((!digitalRead(PinSW)) && !Flagminute) { // on active la boucle selecteur jour  
+        Serial.println("Minute :  ");
+        i=00;
+        bool flag=true;
+        //lcd.setCursor(9, 1);
+        lcd.print (":");
+        
+        lcd.print (i/10,DEC);
+        lcd.print (i%10,DEC);
+        while (flag) {
+            
+            if  (virtualPosition > lastPosition ) {  //menu suivant
+              i=(i+1 ) %60 ;
+              lcd.setCursor(12, 1);
+              lcd.print (i/10,DEC);
+              lcd.print (i%10,DEC);
+
+            } else if (virtualPosition < lastPosition ) { //menu precedent
+              if (i == 0) {i=60;}
+              i=(i-1) %60;   
+              lcd.setCursor(12, 1);
+              lcd.print (i/10,DEC);
+              lcd.print (i%10,DEC);
+            }
+            lastPosition=virtualPosition;
+            delay(150); //eviter rebond du poussoir avec risque de valider une mauvaise date
+            Serial.println(i);
+            if ((!digitalRead(PinSW))){
+            //on valide la date, sortir de la boucle
+              flag=false;
+            }
+        
+        }
+        Serial.print("Votre choix : " );
+        Serial.print(i);
+        Flagminute=true;
+        
+        
+      }
+      break;
   }
+    }
+    }
 }
 
 
