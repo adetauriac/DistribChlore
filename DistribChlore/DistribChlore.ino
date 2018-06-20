@@ -65,9 +65,10 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 // Configuration sauvegardee en EEPROM
 struct config_t
 {
-  long Duree;
+  int Duree[7];
   int Day[7];
   int Heure[7];
+  bool Active_Inactive[7];
 } configuration;
 
 
@@ -89,7 +90,10 @@ char daysOfTheWeek[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", 
 
 
 int DayDistrib[7];
-int HeureDistrib[7]; // 1 heure par jour de possible, mutlti time impossible
+int HeureDistrib[7]; 
+bool ActiveDistrib[7];
+int QuantiteDistrib[7];
+
 int previous_dayWeek;
 const long Delais_Moteur = 5000; //en milliseconde
 String FlagStart;
@@ -101,7 +105,7 @@ int Annee;
 int Heure;
 int Minute;
 int Seconde;
-bool Flagjour, Flagheure,Flagminute, Flagquantite = false ;
+bool Flagjour, Flagheure,Flagminute, Flagquantite,exit_menu =false;
 
 char message1[16] = "";  //pour stoker message ligne 1 du LCD
 char message2[16] = "";  //pour stoker message ligne 2 du LCD
@@ -111,6 +115,9 @@ int j = 0;
 int k = 0;
 int NumberMenu=6;
 int posMenu = 0; //variable de position dans menu principal
+int posMenuAlarm = 0; //variable de position dans sous menu alarm
+int NumberMenuAlarm=8; //+1 to drive specific message EXIT
+
 int posSousMenu[2] = {0, 0}; // tableau pour stocker les positions de chaque sous-menu
 float TempC,TempClock;
 
@@ -266,9 +273,15 @@ void setup() {
   {
       DayDistrib[compteur]=9;
       HeureDistrib[compteur]=25; 
+      ActiveDistrib[compteur]=false;
+      QuantiteDistrib[compteur]=0;
   }
+   //Config temporaire, a terme a modifier via ecran pour save en EEPROM
    DayDistrib[0]=5; //Initié un jour pour distribution
    HeureDistrib[0]=23; //Heure de distribution, par exemple 20h
+   ActiveDistrib[0]=true;
+   QuantiteDistrib[0]=30;
+
    previous_dayWeek=9; // JOur fictif pour permettre un premier check
    FlagStart="N";
    //Serial.println("Debug 2");
@@ -371,6 +384,9 @@ void printAddress(DeviceAddress deviceAddress)
 
 void navigation() {
    //detecter rotation  
+   Serial.print(lastPosition);
+   Serial.print("/");  
+   Serial.println(virtualPosition);
   if ( virtualPosition !=lastPosition){
     lcd.backlight();
     StarTimeLight=millis();
@@ -386,6 +402,29 @@ void navigation() {
     
   }
 }
+
+
+void navigation_menu_alarm() {
+   //detecter rotation  
+  if ( virtualPosition !=lastPosition){
+    lcd.backlight();
+    StarTimeLight=millis();
+    lcd.setCursor(0, 1);
+    lcd.print("               ");
+    if  (virtualPosition > lastPosition ) {  //menu suivant
+      posMenuAlarm=(posMenuAlarm+1 ) %NumberMenuAlarm ;
+    } else if (virtualPosition < lastPosition ) { //menu precedent
+        if (posMenuAlarm == 0) {posMenuAlarm=(NumberMenuAlarm);}
+        posMenuAlarm=(posMenuAlarm-1) %NumberMenuAlarm;   
+      }
+    lastPosition=virtualPosition;
+    Serial.print("Position menu Alarm: ");
+    Serial.println(posMenuAlarm);
+    
+  }
+}
+
+
 
 void affichage(){
     DateTime now = rtc.now();
@@ -525,9 +564,25 @@ void affichage(){
       break;
     case 5: // Test selecteur jour/heure/quantité
       lcd.setCursor(0, 0);
-      lcd.print ("Test Config     ");
+      lcd.print (" Alarme Set     ");
       lcd.setCursor(0, 1);
-      lcd.print ("                ");
+      lcd.print (">               ");
+      exit_menu =false;
+      if ((!digitalRead(PinSW))){  //Entrer dans le menu de lister les alarmes
+        delay(150);
+        while(!exit_menu){
+
+          navigation_menu_alarm();
+          affichage_Gestion_Alarm();
+          
+          
+        }
+      }
+    
+
+
+
+      
       bool EndConfigAlarm=false;
       
       if ((!digitalRead(PinSW)) && !Flagjour) { // on active la boucle selecteur jour  
@@ -656,6 +711,54 @@ void affichage(){
     }
 }
 
+
+void affichage_Gestion_Alarm(){
+      if (posMenuAlarm==7) {
+        lcd.setCursor(0, 0);
+        lcd.print ("> Exit          ");
+        lcd.setCursor(0, 1);
+        lcd.print ("                ");
+        if ((!digitalRead(PinSW))) {
+          delay(150);
+          exit_menu=!exit_menu;
+        }
+      } else {
+      affiche_alarme(posMenuAlarm);  
+      }
+      
+     
+}
+
+void affiche_alarme(int numAlarme){
+   bool exit_menu2 =false;
+    lcd.setCursor(0, 0);
+    lcd.print ("Alarme ");
+    lcd.print (posMenuAlarm);
+    lcd.setCursor(8, 0);
+    lcd.print (" ");
+    if ( ActiveDistrib[numAlarme] == 0 ){
+      lcd.print ("Inactive");
+    } else { lcd.print ("Active   ");}
+    
+    lcd.setCursor(0, 1);
+    //Recuperer et afficher information alarme numAlarme 
+    if (DayDistrib[numAlarme] == 9){
+      lcd.print("No Config       ");
+    }
+    else {
+      lcd.print(daysOfTheWeek[DayDistrib[numAlarme]]);
+      lcd.setCursor(9, 1);
+      lcd.print ("/ ");
+      lcd.print(HeureDistrib[numAlarme]);
+    }
+//    
+//    while(!exit_menu2){
+//    if ((!digitalRead(PinSW))){
+//      delay(150);
+//      exit_menu=!exit_menu;
+//    }
+//   }
+}
 
 
 
