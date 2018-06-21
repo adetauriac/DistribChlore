@@ -384,9 +384,9 @@ void printAddress(DeviceAddress deviceAddress)
 
 void navigation() {
    //detecter rotation  
-   Serial.print(lastPosition);
-   Serial.print("/");  
-   Serial.println(virtualPosition);
+//   Serial.print(lastPosition);
+//   Serial.print("/");  
+//   Serial.println(virtualPosition);
   if ( virtualPosition !=lastPosition){
     lcd.backlight();
     StarTimeLight=millis();
@@ -523,17 +523,23 @@ void affichage(){
         {
           configuration.Day[compteur]=DayDistrib[compteur];
           configuration.Heure[compteur]=HeureDistrib[compteur];
-          if (configuration.Day[compteur] != 9) {
-            Serial.print("Conf num ");
+          configuration.Active_Inactive[compteur]=ActiveDistrib[compteur];
+          configuration.Duree[compteur]=QuantiteDistrib[compteur];
+
+          
+          //if (configuration.Day[compteur] != 9) {
+            Serial.print("Save Conf num ");
             Serial.print(compteur);
             Serial.print(" : ");
             Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
             Serial.print(" / ");
             Serial.print(HeureDistrib[compteur]);
-            Serial.println("h");
-           
-            
-          }
+            Serial.print("h");
+            Serial.print(" / ");
+            Serial.print(ActiveDistrib[compteur]);
+            Serial.print(" / ");
+            Serial.println(QuantiteDistrib[compteur]);
+          //}
         }
         EEPROM_writeAnything(0, configuration);
       }
@@ -550,15 +556,19 @@ void affichage(){
           {
             DayDistrib[compteur]=configuration.Day[compteur];
             HeureDistrib[compteur]=configuration.Heure[compteur];
-            if (configuration.Day[compteur] != 9) {
-              Serial.print("EEPROM Conf num ");
-              Serial.print(compteur);
-              Serial.print(" : ");
-              Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
-              Serial.print(" / ");
-              Serial.print(HeureDistrib[compteur]);
-              Serial.println("h");
-            }
+            //if (configuration.Day[compteur] != 9) {
+            Serial.print("EEPROM Conf num ");
+            Serial.print(compteur);
+            Serial.print(" : ");
+            Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
+            Serial.print(" / ");
+            Serial.print(HeureDistrib[compteur]);
+            Serial.print("h");
+            Serial.print(" / ");
+            Serial.print(ActiveDistrib[compteur]);
+            Serial.print(" / ");
+            Serial.println(QuantiteDistrib[compteur]);
+            //}
           }  
     }
       break;
@@ -719,8 +729,9 @@ void affichage_Gestion_Alarm(){
         lcd.setCursor(0, 1);
         lcd.print ("                ");
         if ((!digitalRead(PinSW))) {
-          delay(150);
+          delay(350);
           exit_menu=!exit_menu;
+          posMenuAlarm=0;
         }
       } else {
       affiche_alarme(posMenuAlarm);  
@@ -747,8 +758,8 @@ void affiche_alarme(int numAlarme){
     }
     else {
       lcd.print(daysOfTheWeek[DayDistrib[numAlarme]]);
-      lcd.setCursor(9, 1);
-      lcd.print ("/ ");
+      lcd.setCursor(8, 1);
+      lcd.print ("-");
       lcd.print(HeureDistrib[numAlarme]);
     }
 //    
