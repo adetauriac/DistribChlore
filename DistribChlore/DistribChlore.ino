@@ -68,6 +68,7 @@ struct config_t
   int Duree[7];
   int Day[7];
   int Heure[7];
+  int Minute[7];
   bool Active_Inactive[7];
 } configuration;
 
@@ -117,10 +118,10 @@ int delayTime2 = 350; // Delay between shifts
 int i = 0;
 int j = 0;
 int k = 0;
-int NumberMenu = 6;
+int NumberMenu = 5;
 int posMenu = 0; //variable de position dans menu principal
 int posMenuAlarm = 0; //variable de position dans sous menu alarm
-int NumberMenuAlarm = 8; //+1 to drive specific message EXIT
+int NumberMenuAlarm = 9; //+1 to drive specific message EXIT
 
 int posSousMenu[2] = {0, 0}; // tableau pour stocker les positions de chaque sous-menu
 float TempC, TempClock;
@@ -291,7 +292,7 @@ void setup() {
   DayDistrib[0] = 5; //Initié un jour pour distribution
   HeureDistrib[0] = 23; //Heure de distribution, par exemple 20h
   ActiveDistrib[0] = true;
-  QuantiteDistrib[0] = 30;
+  QuantiteDistrib[0] = 3;  //Nombre de goblet (a convertire en seconde en fonction du temps necessaire moteur pour equivalence gobelet
 
   previous_dayWeek = 9; // JOur fictif pour permettre un premier check
   FlagStart = "N";
@@ -329,7 +330,7 @@ void loop() {
   if ( previous_dayWeek != now.dayOfTheWeek() ) {
     for (int compteur = 0 ; compteur < 7 ; compteur++)  //parcourir le tableau de jour configuré pour distribution
     {
-      if ( (now.dayOfTheWeek() == DayDistrib[compteur]) && (HeureDistrib[compteur] == now.hour() ) && ActiveDistrib[compteur]==true && (now.dayOfTheWeek() !=  previous_dayWeek ) ) {
+      if ( (now.dayOfTheWeek() == DayDistrib[compteur]) && (HeureDistrib[compteur] == now.hour() ) && ActiveDistrib[compteur] == true && (now.dayOfTheWeek() !=  previous_dayWeek ) ) {
         Serial.print("Nous sommes un ");
         Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
         Serial.println();
@@ -528,66 +529,11 @@ void affichage() {
       break;
     case 3: // menu 3 test Save EEPROM
       lcd.setCursor(0, 0);
-      lcd.print ("TEST EEPROM SAVE");
+      lcd.print ("Conf Dosage...  ");
       lcd.setCursor(0, 1);
-      lcd.print ("PRESS TO SAVE   ");
-      //Test EEPROM config and save
-      if ((!digitalRead(PinSW))) {
-        Serial.println("Save EEPROM");
-        for (int compteur = 0 ; compteur < 7 ; compteur++)
-        {
-          configuration.Day[compteur] = DayDistrib[compteur];
-          configuration.Heure[compteur] = HeureDistrib[compteur];
-          configuration.Active_Inactive[compteur] = ActiveDistrib[compteur];
-          configuration.Duree[compteur] = QuantiteDistrib[compteur];
-
-
-          //if (configuration.Day[compteur] != 9) {
-          Serial.print("Save Conf num ");
-          Serial.print(compteur);
-          Serial.print(" : ");
-          Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
-          Serial.print(" / ");
-          Serial.print(HeureDistrib[compteur]);
-          Serial.print("h");
-          Serial.print(" / ");
-          Serial.print(ActiveDistrib[compteur]);
-          Serial.print(" / ");
-          Serial.println(QuantiteDistrib[compteur]);
-          //}
-        }
-        EEPROM_writeAnything(0, configuration);
-      }
+      lcd.print (">               ");
       break;
-    case 4: // menu 4 afficher config EEPROM
-      lcd.setCursor(0, 0);
-      lcd.print ("LOAD EEPROM...  ");
-      lcd.setCursor(0, 1);
-      lcd.print ("PRESS TO LOAD   ");
-      if ((!digitalRead(PinSW))) {
-        Serial.println("Read EEPROM");
-        EEPROM_readAnything(0, configuration);
-        for (int compteur = 0 ; compteur < 7 ; compteur++)
-        {
-          DayDistrib[compteur] = configuration.Day[compteur];
-          HeureDistrib[compteur] = configuration.Heure[compteur];
-          //if (configuration.Day[compteur] != 9) {
-          Serial.print("EEPROM Conf num ");
-          Serial.print(compteur);
-          Serial.print(" : ");
-          Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
-          Serial.print(" / ");
-          Serial.print(HeureDistrib[compteur]);
-          Serial.print("h");
-          Serial.print(" / ");
-          Serial.print(ActiveDistrib[compteur]);
-          Serial.print(" / ");
-          Serial.println(QuantiteDistrib[compteur]);
-          //}
-        }
-      }
-      break;
-    case 5: // Test selecteur jour/heure/quantité
+    case 4: // Test selecteur jour/heure/quantité
       lcd.setCursor(0, 0);
       lcd.print (" Alarme Set     ");
       lcd.setCursor(0, 1);
@@ -605,25 +551,40 @@ void affichage() {
 }
 
 
-
-
 void affichage_Gestion_Alarm() {
-  if (posMenuAlarm == 7) {
-    lcd.setCursor(0, 0);
-    lcd.print ("> Exit          ");
-    lcd.setCursor(0, 1);
-    lcd.print ("                ");
-    if ((!digitalRead(PinSW))) {
-      delay(350);
-      exit_menu = !exit_menu;
-      posMenuAlarm = 0;
-    }
-  } else {
-    affiche_alarme(posMenuAlarm);
+  switch (posMenuAlarm) {
+    case 7 : // SaveConfig EEPROM
+      lcd.setCursor(0, 0);
+      lcd.print ("> Save EEPROM           ");
+      lcd.setCursor(0, 1);
+      lcd.print ("                ");
+      if ((!digitalRead(PinSW))) {
+        delay(350);
+        SaveConfig_EEPROM();
+        lcd.setCursor(0, 1);
+        lcd.print ("DONE            ");
+        delay(2000);
+        posMenuAlarm = 8;
+      }
+
+      break;
+    case 8:
+      lcd.setCursor(0, 0);
+      lcd.print ("> Exit          ");
+      lcd.setCursor(0, 1);
+      lcd.print ("                ");
+      if ((!digitalRead(PinSW))) {
+        delay(350);
+        exit_menu = !exit_menu;
+        posMenuAlarm = 0;
+      }
+      break;
+    default :
+      affiche_alarme(posMenuAlarm);
+      break;
   }
-
-
 }
+
 
 void affiche_alarme(int numAlarme) {
   DateTime now = rtc.now();
@@ -860,7 +821,7 @@ void affiche_alarme(int numAlarme) {
               lastPosition = virtualPosition;
               lcd.setCursor(12, 1);
               lcd.print (tmpMinute / 10, DEC);
-              lcd.print (tmpMinute % 10, DEC);  
+              lcd.print (tmpMinute % 10, DEC);
             }
             if ((!digitalRead(PinSW))) { //Save new config alarm
               delay(250);
@@ -870,6 +831,50 @@ void affiche_alarme(int numAlarme) {
 
               lcd.print (MinuteDistrib[numAlarme] / 10, DEC);
               lcd.print (MinuteDistrib[numAlarme] % 10, DEC);
+              //FlagConfActivation=!FlagConfActivation;
+              exit_loop = !exit_loop;
+            }
+          }
+
+          break;
+        case 4: //Gestion des nb gobelet
+          TmpQuantite = QuantiteDistrib[numAlarme];
+          exit_loop = 0;
+          while (!exit_loop) {
+            currentTime = millis();
+            if (millis() - lastmillis > delai_clignotement ) {
+              lastmillis = millis();
+              if ( stat ) {
+                stat = !stat;
+                lcd.setCursor(15, 1);
+                lcd.print (TmpQuantite);
+              } else {
+                lcd.setCursor(15, 1);
+                lcd.print ("  ");
+                stat = !stat;
+              }
+            }
+            //Lister les nb gobelet
+            if (virtualPosition != lastPosition ) {
+              if  (virtualPosition > lastPosition ) {  //+ 1 gobelet
+                TmpQuantite = (TmpQuantite + 1 ) % 10 ;
+              } else if (virtualPosition < lastPosition ) { //Heure precedent
+                if (TmpQuantite == 0) {
+                  TmpQuantite = 10;
+                }
+                TmpQuantite = (TmpQuantite - 1) % 10;
+              }
+              lastPosition = virtualPosition;
+              lcd.setCursor(15, 1);
+              lcd.print (TmpQuantite);
+            }
+            if ((!digitalRead(PinSW))) { //Save new config alarm
+              delay(250);
+              QuantiteDistrib[numAlarme] = TmpQuantite;
+              posSelectionUpdate += 1;
+              lcd.setCursor(15, 1);
+
+              lcd.print ( QuantiteDistrib[numAlarme]);
               //FlagConfActivation=!FlagConfActivation;
               exit_loop = !exit_loop;
               exit_update = !exit_update;
@@ -902,6 +907,69 @@ String Convert_Bool(bool val) {
 
   return str;
 }
+
+void SaveConfig_EEPROM() {
+  //lcd.setCursor(0, 0);
+  //lcd.print ("TEST EEPROM SAVE");
+  //lcd.setCursor(0, 1);
+  //lcd.print ("PRESS TO SAVE   ");
+  //Test EEPROM config and save
+  //if ((!digitalRead(PinSW))) {
+  Serial.println("Save EEPROM");
+  for (int compteur = 0 ; compteur < 7 ; compteur++)
+  {
+    configuration.Day[compteur] = DayDistrib[compteur];
+    configuration.Heure[compteur] = HeureDistrib[compteur];
+    configuration.Minute[compteur] = MinuteDistrib[compteur];
+    configuration.Active_Inactive[compteur] = ActiveDistrib[compteur];
+    configuration.Duree[compteur] = QuantiteDistrib[compteur];
+
+    Serial.print("Save Conf num ");
+    Serial.print(compteur);
+    Serial.print(" : ");
+    Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
+    Serial.print(" / ");
+    Serial.print(HeureDistrib[compteur]);
+    Serial.print(":");
+    Serial.print(MinuteDistrib[compteur]);
+    Serial.print(":");
+    Serial.print(" / ");
+    Serial.print(ActiveDistrib[compteur]);
+    Serial.print(" / ");
+    Serial.println(QuantiteDistrib[compteur]);
+  }
+  //EEPROM_writeAnything(0, configuration);
+
+}
+
+void LoadConfig_EEPROM() {
+
+  Serial.println("Read EEPROM");
+  EEPROM_readAnything(0, configuration);
+  int compteur;
+  for ( compteur = 0 ; compteur < 7 ; compteur++)
+  {
+    DayDistrib[compteur] = configuration.Day[compteur];
+    HeureDistrib[compteur] = configuration.Heure[compteur];
+    MinuteDistrib[compteur] = configuration.Minute[compteur];
+    ActiveDistrib[compteur] = ActiveDistrib[compteur] ;
+    QuantiteDistrib[compteur] = configuration.Duree[compteur];
+  }
+  Serial.print("EEPROM Conf num ");
+  Serial.print(compteur);
+  Serial.print(" : ");
+  Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
+  Serial.print(" / ");
+  Serial.print(HeureDistrib[compteur]);
+  Serial.print("h");
+  Serial.print(" / ");
+  Serial.print(ActiveDistrib[compteur]);
+  Serial.print(" / ");
+  Serial.println(QuantiteDistrib[compteur]);
+
+}
+
+
 
 
 void scrollInFromRight (int line, char str1[]) {
