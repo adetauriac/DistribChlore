@@ -49,7 +49,7 @@ DeviceAddress insideThermometer;
 
 // LCD definition
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-#define timelight 10000  //mise en veille ecran après X seconde
+#define timelight 20000  //mise en veille ecran après X seconde
 
 
 /* Useful Constants */
@@ -97,6 +97,11 @@ bool ActiveDistrib[7];
 int QuantiteDistrib[7];
 
 
+int Dose = 20; //Dosage d'un gobelet/dose
+int TimeDose = 18; // temps en seconde pour 1 gobelet
+int tmpDose;
+int tmpTempDose;
+
 int previous_dayWeek;
 const long Delais_Moteur = 5000; //en milliseconde
 const long delai_clignotement = 500; //temps de clignotement LCD
@@ -142,8 +147,8 @@ const int PinSW = 10;  // Used for the push button switch
 int lastCount = 50;
 
 // Updated by the ISR (Interrupt Service Routine)
-volatile int virtualPosition = 50;
-volatile int lastPosition = 50;
+volatile int virtualPosition = 1000;
+volatile int lastPosition = 1000;
 
 
 // ------------------------------------------------------------------
@@ -163,8 +168,8 @@ void isr ()  {
       virtualPosition++ ; // Could be +5 or +10
     }
 
-    // Restrict value from 0 to +100
-    virtualPosition = min(100, max(0, virtualPosition));
+    // Restrict value from 0 to +2000
+    virtualPosition = min(2000, max(0, virtualPosition));
 
     // Keep track of when we were here last (no more than every 5ms)
     lastInterruptTime = interruptTime;
@@ -443,6 +448,9 @@ void navigation_menu_alarm() {
 
 
 void affichage() {
+  int exit_loop = 0;
+  int exit_update = 0;
+  int stat = false;
   DateTime now = rtc.now();
   switch (posMenu) { // en fonction du menu 1
     case 0: // Affichage Date et heures
@@ -527,11 +535,139 @@ void affichage() {
         StarTimeLight = millis();
       }
       break;
-    case 3: // menu 3 test Save EEPROM
+
+
+    case 3: // menu 3 Configurer le dosage
+      tmpDose = Dose;
+      tmpTempDose = TimeDose;
+      lastPosition = virtualPosition;
+     
+
       lcd.setCursor(0, 0);
-      lcd.print ("Conf Dosage...  ");
+      lcd.print ("Conf 1 dose     ");
       lcd.setCursor(0, 1);
-      lcd.print (">               ");
+      //lcd.print (">               ");
+      lcd.setCursor(0, 1);
+      lcd.print ("1 dose = ");
+      lcd.print (tmpDose / 100, DEC);
+      lcd.print (tmpDose % 100, DEC);
+      lcd.print ("g   ");
+
+      if ((!digitalRead(PinSW))) {
+        delay(300);
+        //        lcd.setCursor(0, 1);
+        //        lcd.print ("1 dose = ");
+        //        lcd.print (tmpDose / 100, DEC);
+        //        lcd.print (tmpDose % 100, DEC);
+        //        lcd.print ("g   ");
+        exit_loop=false;
+        while (!exit_loop) {
+          if (millis() - lastmillis > delai_clignotement ) {
+            lastmillis = millis();
+            if ( stat ) {
+              stat = !stat;
+              lcd.setCursor(9, 1);
+              lcd.print (tmpDose / 100, DEC);
+              lcd.print (tmpDose % 100, DEC);
+            } else {
+              lcd.setCursor(9, 1);
+              lcd.print ("   ");
+              stat = !stat;
+
+            }
+          }
+          //Choix de la s=dose
+          if (virtualPosition != lastPosition ) {
+            if  (virtualPosition > lastPosition ) {  //Heure suivante
+              tmpDose = (tmpDose + 10 ) % 1000 ;
+            } else if (virtualPosition < lastPosition ) { //Heure precedent
+              if (tmpDose == 0) {
+                tmpDose = 1000;
+              }
+              tmpDose = (tmpDose - 10) % 1000;
+            }
+            lastPosition = virtualPosition;
+            lcd.setCursor(9, 1);
+            lcd.print (tmpDose / 100, DEC);
+            lcd.print (tmpDose % 100, DEC);
+
+          }
+          //
+          if ((!digitalRead(PinSW))) { //Save new dose
+            delay(250);
+            Dose = tmpDose;
+            lcd.setCursor(9, 1);
+            lcd.print (Dose / 100, DEC);
+            lcd.print (Dose % 100, DEC);
+            //FlagConfActivation=!FlagConfActivation;
+            exit_loop = !exit_loop;
+            delay(2000);
+          }
+         
+        }
+  
+          // Gestion config nb seconde pour la dose selectionéz
+          lcd.setCursor(0, 0);
+          lcd.print ("Tps(s)for : ");
+          lcd.print (Dose / 100, DEC);
+          lcd.print (Dose % 100, DEC);
+          lcd.print ("g");
+          
+          lcd.setCursor(0, 1);
+          lcd.print ("Duree =  ");
+          lcd.print (tmpTempDose / 10, DEC);
+          lcd.print (tmpTempDose % 10, DEC);
+          lcd.print ("s   ");
+          exit_loop = false;
+          while (!exit_loop) {
+            if (millis() - lastmillis > delai_clignotement ) {
+              lastmillis = millis();
+              if ( stat ) {
+                stat = !stat;
+                lcd.setCursor(9, 1);
+                lcd.print (tmpTempDose / 10, DEC);
+                lcd.print (tmpTempDose % 10, DEC);
+              } else {
+                lcd.setCursor(9, 1);
+                lcd.print ("  ");
+                stat = !stat;
+
+              }
+            }
+            //Choix de la temps en seconde pour la dose
+            if (virtualPosition != lastPosition ) {
+              if  (virtualPosition > lastPosition ) {  //Heure suivante
+                tmpTempDose = (tmpTempDose + 1 ) % 60 ;
+              } else if (virtualPosition < lastPosition ) { //Heure precedent
+                if (tmpTempDose == 0) {
+                  tmpTempDose = 60;
+                }
+                tmpTempDose = (tmpTempDose - 1) % 60;
+              }
+              lastPosition = virtualPosition;
+              lcd.setCursor(9, 1);
+              lcd.print (tmpTempDose / 10, DEC);
+              lcd.print (tmpTempDose % 10, DEC);
+
+            }
+            //
+            if ((!digitalRead(PinSW))) { //Save new dose
+              delay(250);
+              TimeDose = tmpTempDose;
+              lcd.setCursor(9, 1);
+              lcd.print (TimeDose / 10, DEC);
+              lcd.print (TimeDose % 10, DEC);
+              //FlagConfActivation=!FlagConfActivation;
+              exit_loop = !exit_loop;
+            }
+
+
+          }
+        
+      }
+
+
+
       break;
     case 4: // Test selecteur jour/heure/quantité
       lcd.setCursor(0, 0);
