@@ -268,7 +268,12 @@ void setup() {
   previous_dayWeek = 9; // JOur fictif pour permettre un premier check
   FlagStart = 0;
   //DateTime now = rtc.now();
-   Tache[0].set_global(0,23,0,2,1);
+
+   //Load EEPROM pour recharger les configs
+   LoadConfig_EEPROM();
+   //Configuration manuelle des taches 
+   //Tache[0].set_global(0,23,0,2,1);
+   
 }
 
 
@@ -967,54 +972,59 @@ String Convert_Bool(bool val) {
 void SaveConfig_EEPROM() {
 
   //  Serial.println("Save EEPROM");
-  for (int compteur = 0 ; compteur <= NbTaches ; compteur++)
+  for (byte compteur = 0 ; compteur <= NbTaches ; compteur++)
   {
     configuration.TacheEEPROM[compteur] = Tache[compteur];
-    //
-    //    Serial.print("Save Conf num ");
-    //    Serial.print(compteur);
-    //    Serial.print(" : ");
-    //    Serial.print(daysOfTheWeek[configuration.TacheEEPROM[compteur].get_date()]);
-    //    Serial.print(" / ");
-    //    Serial.print(configuration.TacheEEPROM[compteur].get_heure());
-    //    Serial.print(":");
-    //    Serial.print(configuration.TacheEEPROM[compteur].get_minute());
-    //    Serial.print(" / ");
-    //    Serial.print(configuration.TacheEEPROM[compteur].get_nbDose());
-    //    Serial.print(" / ");
-    //    Serial.println(configuration.TacheEEPROM[compteur].get_status());
+    
+        Serial.print(F("Save Conf num "));
+        Serial.print(compteur);
+        Serial.print(F(" : "));
+        Serial.print(configuration.TacheEEPROM[compteur].get_date());
+        Serial.print(F(" / "));
+        Serial.print(configuration.TacheEEPROM[compteur].get_heure());
+        Serial.print(F(":"));
+        Serial.print(configuration.TacheEEPROM[compteur].get_minute());
+        Serial.print(F(" / "));
+        Serial.print(configuration.TacheEEPROM[compteur].get_nbDose());
+        Serial.print(F(" / "));
+        Serial.println(configuration.TacheEEPROM[compteur].get_status());
   }
   configuration.DoseEEPROM = Dose;
   configuration.TimeDoseEEPROM = TimeDose;
 
-  //EEPROM_writeAnything(0, configuration);
+  EEPROM_writeAnything(0, configuration);
 
 }
 
 void LoadConfig_EEPROM() {
 
-  //  Serial.println("Read EEPROM");
-  //  EEPROM_readAnything(0, configuration);
-  //  int compteur;
-  //  for ( compteur = 0 ; compteur < 7 ; compteur++)
-  //  {
-  //    DayDistrib[compteur] = configuration.Day[compteur];
-  //    HeureDistrib[compteur] = configuration.Heure[compteur];
-  //    MinuteDistrib[compteur] = configuration.Minute[compteur];
-  //    ActiveDistrib[compteur] = ActiveDistrib[compteur] ;
-  //    QuantiteDistrib[compteur] = configuration.Duree[compteur];
-  //  }
-  //  Serial.print("EEPROM Conf num ");
-  //  Serial.print(compteur);
-  //  Serial.print(" : ");
-  //  Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
-  //  Serial.print(" / ");
-  //  Serial.print(HeureDistrib[compteur]);
-  //  Serial.print("h");
-  //  Serial.print(" / ");
-  //  Serial.print(ActiveDistrib[compteur]);
-  //  Serial.print(" / ");
-  //  Serial.println(QuantiteDistrib[compteur]);
+    Serial.println("Read EEPROM");
+    EEPROM_readAnything(0, configuration);
+    byte compteur;
+    for ( compteur = 0 ; compteur < NbTaches ; compteur++)
+    {
+      Tache[compteur].set_date(configuration.TacheEEPROM[compteur].get_date());
+      Tache[compteur].set_heure(configuration.TacheEEPROM[compteur].get_heure());
+      Tache[compteur].set_minute(configuration.TacheEEPROM[compteur].get_minute());
+      Tache[compteur].set_nbDose(configuration.TacheEEPROM[compteur].get_nbDose());
+      Tache[compteur].set_status(configuration.TacheEEPROM[compteur].get_status());
+    
+    
+    Serial.print(F("EEPROM Conf num "));
+    Serial.print(compteur);
+    Serial.print(F(" : "));
+    Serial.print(Tache[compteur].get_date());
+    Serial.print(F(" / "));
+    Serial.print(Tache[compteur].get_heure());
+    Serial.print(F(":"));
+    Serial.print(Tache[compteur].get_minute());
+    Serial.print(F(" / "));
+    Serial.print(Tache[compteur].get_nbDose());
+    Serial.print(F(" / "));
+    Serial.println(Tache[compteur].get_status());
+    }
+    Dose=configuration.TimeDoseEEPROM;
+    TimeDose=configuration.TimeDoseEEPROM;
 
 }
 
