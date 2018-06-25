@@ -16,6 +16,7 @@
 //
 
 // Date and time functions using a DS3231 RTC connected via I2C and Wire lib
+#include "TachesDistrib.h"
 #include <Wire.h>
 #include "RTClib.h"
 #include <TimerOne.h>
@@ -24,6 +25,7 @@
 #include <DallasTemperature.h>
 #include <EEPROM.h>
 #include "EEPROMAnything.h"
+#include <avr/pgmspace.h>
 
 
 //1Wire definition
@@ -46,89 +48,79 @@ DeviceAddress insideThermometer;
 #define moteurIN1 7
 #define moteurIN2 8
 
+#define DATE 0
+#define HEURE 1
+#define MINUTE 2
+#define NBDOSE 3
+#define STATUS 4
+
+
 
 // LCD definition
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define timelight 20000  //mise en veille ecran après X seconde
 
 
-/* Useful Constants */
-#define SECS_PER_MIN  (60UL)
-#define SECS_PER_HOUR (3600ULUR * 24L)
-/* Useful Macros for getting elapsed time */
-#define numberOfSeconds(_time_) (_time_ % SECS_PER_MIN)
-#define numberOfMinutes(_time_) ()
-#define SECS_PER_DAY  (SECS_PER_HO(_time_ / SECS_PER_MIN) % SECS_PER_MIN)
-#define numberOfHours(_time_) (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
-#define elapsedDays(_time_) ( _time_ / SECS_PER_DAY)
+///* Useful Constants */
+//#define SECS_PER_MIN  (60UL)
+//#define SECS_PER_HOUR (3600ULUR * 24L)
+///* Useful Macros for getting elapsed time */
+//#define numberOfSeconds(_time_) (_time_ % SECS_PER_MIN)
+//#define numberOfMinutes(_time_) ()
+//#define SECS_PER_DAY  (SECS_PER_HO(_time_ / SECS_PER_MIN) % SECS_PER_MIN)
+//#define numberOfHours(_time_) (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
+//#define elapsedDays(_time_) ( _time_ / SECS_PER_DAY)
+//
+
+
+
 
 // Configuration sauvegardee en EEPROM
 struct config_t
 {
-  int Duree[7];
-  int Day[7];
-  int Heure[7];
-  int Minute[7];
-  bool Active_Inactive[7];
+  Taches TacheEEPROM[10];
+  int DoseEEPROM;
+  int TimeDoseEEPROM;
+
 } configuration;
 
 
 long correction, remainingTime, lastDistributionTime , elapsedLightTime, lastActionTime = 0L;
-unsigned long lightDuration = 10L;
+//unsigned long lightDuration = 10L;
 
 // Definition RTC
 RTC_DS3231 rtc;
 
 
-char daysOfTheWeek[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
+//char daysOfTheWeek[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
 
-//ClickEncoder *encoder;
-//int16_t value = 0, last = 0;
+//Passage en mode objet
+int NbTaches = 10;
+bool TachesDone[10];
+Taches Tache[10];
 
-//void timerIsr() {
-//  encoder->service();
-//}
+byte Dose = 20; //Dosage d'un gobelet/dose
+int TimeDose = 6; // temps en seconde pour 1 gobelet
+int tmpDose, tmpTempDose;
 
-// TO DO , faire un objet avec carateristique et methode
-int DayDistrib[7];
-int HeureDistrib[7];
-int MinuteDistrib[7];
-bool ActiveDistrib[7];
-int QuantiteDistrib[7];
+byte previous_dayWeek;
+long Delais_Moteur = 5000L; //en milliseconde, a recuperer de EEPROM ensuite
 
-
-int Dose = 20; //Dosage d'un gobelet/dose
-int TimeDose = 18; // temps en seconde pour 1 gobelet
-int tmpDose;
-int tmpTempDose;
-
-int previous_dayWeek;
-const long Delais_Moteur = 5000; //en milliseconde
 const long delai_clignotement = 500; //temps de clignotement LCD
-String FlagStart;
-String Date;
-String Horloge;
-int Jour;
-int Mois;
-int Annee;
-int Heure;
-int Minute;
-int Seconde;
-bool Flagjour, Flagheure, Flagminute, Flagquantite, exit_menu = false;
+bool FlagStart;
+
+bool exit_menu = false;
 
 char message1[16] = "";  //pour stoker message ligne 1 du LCD
 char message2[16] = "";  //pour stoker message ligne 2 du LCD
-int delayTime2 = 350; // Delay between shifts
 
-int i = 0;
-int j = 0;
-int k = 0;
-int NumberMenu = 5;
-int posMenu = 0; //variable de position dans menu principal
-int posMenuAlarm = 0; //variable de position dans sous menu alarm
-int NumberMenuAlarm = 9; //+1 to drive specific message EXIT
 
-int posSousMenu[2] = {0, 0}; // tableau pour stocker les positions de chaque sous-menu
+byte NumberMenu = 5;
+byte posMenu = 0; //variable de position dans menu principal
+byte posMenuAlarm = 0; //variable de position dans sous menu alarm
+byte NumberMenuAlarm = NbTaches + 2; //+2 to drive specific message EXIT and Save
+
+//int posSousMenu[2] = {0, 0}; // tableau pour stocker les positions de chaque sous-menu
 float TempC, TempClock;
 
 
@@ -143,8 +135,7 @@ unsigned long lastmillis = 0;
 const int PinA = 3;  // Used for generating interrupts using CLK signal
 const int PinB = 4;  // Used for reading DT signal
 const int PinSW = 10;  // Used for the push button switch
-// Keep track of last rotary value
-int lastCount = 50;
+
 
 // Updated by the ISR (Interrupt Service Routine)
 volatile int virtualPosition = 1000;
@@ -233,40 +224,33 @@ void setup() {
   delay(2000);
   lcd.print("  Starting...   ");
   StarTimeLight = millis();
-  Serial.println("Starting");
+  Serial.println(F("Starting"));
   // 1-wire locate devices on the bus
   Serial.print("Locating devices...");
   sensors.begin();
-  Serial.print("Found ");
+  Serial.print(F("Found "));
   Serial.print(sensors.getDeviceCount(), DEC);
-  Serial.println(" devices.");
+  Serial.println(F(" devices."));
 
   // report parasite power requirements
-  Serial.print("Parasite power is: ");
+  Serial.print(F("Parasite power is: "));
   if (sensors.isParasitePowerMode()) Serial.println("ON");
-  else Serial.println("OFF");
+  else Serial.println(F("OFF"));
   if (!sensors.getAddress(insideThermometer, 0)) Serial.println("Unable to find address for Device 0");
   // show the addresses we found on the bus
-  Serial.print("Device 0 Address: ");
+  Serial.print(F("Device 0 Address: "));
   printAddress(insideThermometer);
   Serial.println();
 
   // set the resolution to 9 bit (Each Dallas/Maxim device is capable of several different resolutions)
   sensors.setResolution(insideThermometer, 9);
 
-  Serial.print("Device 0 Resolution: ");
+  Serial.print(F("Device 0 Resolution: "));
   Serial.print(sensors.getResolution(insideThermometer), DEC);
   Serial.println();
   delay(1000);
   lcd.clear();
 
-  //pinMode(LCD_light, OUTPUT);
-  //encoder = new ClickEncoder(A1, A0, A2, 4);
-  //encoder->setAccelerationEnabled(true);;
-
-  //Timer1.initialize(1000);
-  //Timer1.attachInterrupt(timerIsr);
-  Serial.println("Debug 0");
   // Rotary pulses are INPUTs
   pinMode(PinA, INPUT_PULLUP);
   pinMode(PinB, INPUT_PULLUP);
@@ -275,39 +259,20 @@ void setup() {
   // Attach the routine to service the interrupts
   attachInterrupt(digitalPinToInterrupt(PinA), isr, LOW);
 
-  //Serial.println("Debug 1");
-
-  //Initier tableau des jour et heure pour activer Chlore
-  //utiliser le num du jour 0 Dimanche
-  //7 slot, 1 par jour possible, si pas configuré, mise à 9 pour jour et 25 pour Heure
-
-
-  //A mettre lors de l initialisation des alarmes lors de la lecture de EPROMM
-  for (int compteur = 0 ; compteur < 7 ; compteur++)
+  for (byte i = 0; i < 10; i++)
   {
-    DayDistrib[compteur] = 9;
-    HeureDistrib[compteur] = 00;
-    ActiveDistrib[compteur] = false;
-    QuantiteDistrib[compteur] = 0;
-    MinuteDistrib[compteur] = 00;
+    Tache[i].setup();
+    TachesDone[i] = false;
   }
 
-
-  //Config temporaire, a terme a modifier via ecran pour save en EEPROM
-  DayDistrib[0] = 5; //Initié un jour pour distribution
-  HeureDistrib[0] = 23; //Heure de distribution, par exemple 20h
-  ActiveDistrib[0] = true;
-  QuantiteDistrib[0] = 3;  //Nombre de goblet (a convertire en seconde en fonction du temps necessaire moteur pour equivalence gobelet
-
   previous_dayWeek = 9; // JOur fictif pour permettre un premier check
-  FlagStart = "N";
-  //Serial.println("Debug 2");
-  DateTime now = rtc.now();
+  FlagStart = 0;
+  //DateTime now = rtc.now();
 
-
-
-
-
+  //Load EEPROM pour recharger les configs
+  LoadConfig_EEPROM();
+  //Configuration manuelle des taches
+  //Tache[0].set_global(0,23,0,2,1);
 
 }
 
@@ -315,6 +280,8 @@ void setup() {
 void loop() {
   //Define Date time
   DateTime now = rtc.now();
+  //char daysOfTheWeek[7][3] = {"Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"};
+
   navigation();
   affichage();
 
@@ -328,53 +295,74 @@ void loop() {
     posMenu = 0;
   }
 
-
+  //Si changement de journée, on reset le tableau des Taches réalisée
+  if ( previous_dayWeek != now.dayOfTheWeek() ) {
+    previous_dayWeek = now.dayOfTheWeek();
+    for (byte i = 0 ; i < NbTaches ; i++) {
+      TachesDone[i] = false;
+    }
+  }
 
   //Parcour tableau des jours configuréspour execution si on est sur un nouveau jour
 
-  if ( previous_dayWeek != now.dayOfTheWeek() ) {
-    for (int compteur = 0 ; compteur < 7 ; compteur++)  //parcourir le tableau de jour configuré pour distribution
-    {
-      if ( (now.dayOfTheWeek() == DayDistrib[compteur]) && (HeureDistrib[compteur] == now.hour() ) && ActiveDistrib[compteur] == true && (now.dayOfTheWeek() !=  previous_dayWeek ) ) {
-        Serial.print("Nous sommes un ");
-        Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
-        Serial.println();
-        Serial.print("Lancement ");
-        lcd.clear();
-        FlagStart = "Y";
-        compteur = 9;//pour ne plus parcourir la boucle au risque de lancer 2 fois le chlore
-        previous_dayWeek = now.dayOfTheWeek();
-        StartTime = millis();
-      }
-      else {
-        Serial.print("Distribution déjà faite ");
-        Serial.println();
-        previous_dayWeek = now.dayOfTheWeek();
-        compteur = 9;//pour ne plus parcourir la boucle au risque de lancer 2 fois le chlore
 
+  if ( FlagStart == 0 ) {  // Test si tache active, uniquement si la tache precedente n'est plus en cours
+    for (byte i = 0 ; i < NbTaches ; i++)  //parcourir le tableau de jour configuré pour distribution
+    {
+
+      //Delais_Moteur = ( ((long)Tache[8].get_nbDose()) * ((long)TimeDose) ) * 1000; // TO DO fonction pour convertir nb dose avec temps pour 1 dose et passage en milliseconde (*1000)
+
+      //Si tache "i" n'a pas encore été réalisé ET
+      //  + on est le bon jour
+      //  + tache active
+      //  + date et heure correte
+      //  + Tache activée
+      //  ==> on active la distribution
+      if ( !TachesDone[i] && (now.dayOfTheWeek() == Tache[i].get_date()) && Tache[i].get_status() && now.hour() == Tache[i].get_heure() && now.minute() == Tache[i].get_minute() ) { //&& now.minute() == Tache[i].get_minute()  ) {
+        Serial.print(F("Nous sommes un "));
+        //Serial.println(daysOfTheWeek[now.dayOfTheWeek()]);
+        Serial.print(F("Lancement "));
+        lcd.clear();
+        FlagStart = 1;
+        Delais_Moteur = Tache[i].get_nbDose() * TimeDose * 1000;; // TO DO fonction pour convertir nb dose avec temps pour 1 dose
+        remainingTime = Delais_Moteur;
+        Serial.print(Delais_Moteur);
+        //On indique que le tache a été jouée pour la journée en cour
+        TachesDone[i] = true;
+        StartTime = millis();
+        lastActionTime = StartTime;
+        break;
       }
     }
-
   }
+
   // Si flag execution actif + dans la durée d'execution, on fait tourner le moteur
 
   //Serial.print(FlagStart);
-  if (FlagStart == "Y" ) {  //Pour indiquer que le moteur doit tourner en automatique
-    if ( ( millis() - StartTime < Delais_Moteur) && FlagStart == "Y" ) {
-      Serial.println("Start Moteur ");
+  if (FlagStart == 1  ) { //Pour indiquer que le moteur doit tourner en automatique
+    //Serial.print("If FlagStart 1 on test le timing");
+
+    if ( ( millis() - StartTime < Delais_Moteur) && FlagStart == 1 ) {
+      Serial.println(F("Start Moteur "));
       analogWrite(moteurENB, 255);
-      sprintf(message1, "Distribution...");
-      sprintf(message2, "Duree set : %2d s", Delais_Moteur / 1000);
+      sprintf(message1, "Distib... : %2d s", (Delais_Moteur / 1000));
+      if ( ( millis() - lastActionTime > 1000 )) {
+        remainingTime = remainingTime - 1000;
+        lastActionTime = millis();
+
+      }
+      sprintf(message2, "Reste : %2d s", (remainingTime) / 1000);
+
       lcd.setCursor(0, 0);
-      lcd.print ("Distribution...");
+      lcd.print (message1);
       lcd.setCursor(0, 1);
       lcd.print (message2);
 
     }
     else  {
-      Serial.print("Stop Moteur ");
+      Serial.print(F("Stop Moteur "));
       analogWrite(moteurENB, 0);
-      FlagStart = "N";
+      FlagStart = !FlagStart;
       lcd.clear();
     }
   }
@@ -400,10 +388,6 @@ void printAddress(DeviceAddress deviceAddress)
 
 
 void navigation() {
-  //detecter rotation
-  //   Serial.print(lastPosition);
-  //   Serial.print("/");
-  //   Serial.println(virtualPosition);
   if ( virtualPosition != lastPosition) {
     lcd.backlight();
     StarTimeLight = millis();
@@ -416,47 +400,30 @@ void navigation() {
       posMenu = (posMenu - 1) % NumberMenu;
     }
     lastPosition = virtualPosition;
-    Serial.print("Position menu : ");
+    Serial.print(F("Position menu : "));
     Serial.println(posMenu);
 
   }
 }
 
 
-void navigation_menu_alarm() {
-  //detecter rotation
-  if ( virtualPosition != lastPosition) {
-    lcd.backlight();
-    StarTimeLight = millis();
-    lcd.setCursor(0, 1);
-    lcd.print("               ");
-    if  (virtualPosition > lastPosition ) {  //menu suivant
-      posMenuAlarm = (posMenuAlarm + 1 ) % NumberMenuAlarm ;
-    } else if (virtualPosition < lastPosition ) { //menu precedent
-      if (posMenuAlarm == 0) {
-        posMenuAlarm = (NumberMenuAlarm);
-      }
-      posMenuAlarm = (posMenuAlarm - 1) % NumberMenuAlarm;
-    }
-    lastPosition = virtualPosition;
-    Serial.print("Position menu Alarm: ");
-    Serial.println(posMenuAlarm);
 
-  }
-}
 
 
 
 void affichage() {
-  int exit_loop = 0;
-  int exit_update = 0;
-  int stat = false;
+  byte exit_loop = 0;
+  byte exit_update = 0;
+  //bool exit_menu=false;
+  byte stat = false;
   DateTime now = rtc.now();
   switch (posMenu) { // en fonction du menu 1
     case 0: // Affichage Date et heures
-
       // Afficher Date et heure si pas d'autre action
-      if ( FlagStart == "N" ) {
+      //Serial.print(F("Ecran date/heure : FlagStart = "));
+      //Serial.println(FlagStart);
+
+      if ( !FlagStart ) {
         lcd.setCursor(0, 0);
         lcd.print (now.day() / 10, DEC);
         lcd.print (now.day() % 10, DEC);
@@ -483,7 +450,6 @@ void affichage() {
       sensors.requestTemperatures(); // It responds almost immediately. Let's print out the data
       TempC = printTemperature(insideThermometer); // Use a simple function to print out the data
       TempClock = rtc.getTemperature();
-
       lcd.setCursor(0, 0);
       lcd.print("Piscine : ");
       lcd.print(TempC);
@@ -493,14 +459,12 @@ void affichage() {
       lcd.print(TempClock);
       lcd.print("C");
       //lcd.print(virtualPosition);
-
       break;
     case 2: // menu 2 : Test manuel
 
       //allume ecran + reinitialise compteur ecran
       //clean LCD, star compteur, moteur
       //Si plus de pression, stop compteur, affichier le compteur
-
       lcd.setCursor(0, 0);
       lcd.print ("Manual action   ");
       lcd.setCursor(0, 1);
@@ -527,9 +491,9 @@ void affichage() {
         sprintf(message2, "Duree : %2d s", ((millis() - StartTimeManual) / 1000));
         lcd.print (message2);
 
-        Serial.print("Durée : ");
-        Serial.print((millis() - StartTimeManual) / 1000);
-        Serial.println("s");
+        //        Serial.print("Durée : ");
+        //        Serial.print((millis() - StartTimeManual) / 1000);
+        //        Serial.println("s");
         delay(4000);
         lcd.clear();
         StarTimeLight = millis();
@@ -541,7 +505,7 @@ void affichage() {
       tmpDose = Dose;
       tmpTempDose = TimeDose;
       lastPosition = virtualPosition;
-     
+
 
       lcd.setCursor(0, 0);
       lcd.print ("Conf 1 dose     ");
@@ -560,7 +524,7 @@ void affichage() {
         //        lcd.print (tmpDose / 100, DEC);
         //        lcd.print (tmpDose % 100, DEC);
         //        lcd.print ("g   ");
-        exit_loop=false;
+        exit_loop = false;
         while (!exit_loop) {
           if (millis() - lastmillis > delai_clignotement ) {
             lastmillis = millis();
@@ -603,67 +567,64 @@ void affichage() {
             exit_loop = !exit_loop;
             delay(2000);
           }
-         
-        }
-  
-          // Gestion config nb seconde pour la dose selectionéz
-          lcd.setCursor(0, 0);
-          lcd.print ("Tps(s)for : ");
-          lcd.print (Dose / 100, DEC);
-          lcd.print (Dose % 100, DEC);
-          lcd.print ("g");
-          
-          lcd.setCursor(0, 1);
-          lcd.print ("Duree =  ");
-          lcd.print (tmpTempDose / 10, DEC);
-          lcd.print (tmpTempDose % 10, DEC);
-          lcd.print ("s   ");
-          exit_loop = false;
-          while (!exit_loop) {
-            if (millis() - lastmillis > delai_clignotement ) {
-              lastmillis = millis();
-              if ( stat ) {
-                stat = !stat;
-                lcd.setCursor(9, 1);
-                lcd.print (tmpTempDose / 10, DEC);
-                lcd.print (tmpTempDose % 10, DEC);
-              } else {
-                lcd.setCursor(9, 1);
-                lcd.print ("  ");
-                stat = !stat;
 
-              }
-            }
-            //Choix de la temps en seconde pour la dose
-            if (virtualPosition != lastPosition ) {
-              if  (virtualPosition > lastPosition ) {  //Heure suivante
-                tmpTempDose = (tmpTempDose + 1 ) % 60 ;
-              } else if (virtualPosition < lastPosition ) { //Heure precedent
-                if (tmpTempDose == 0) {
-                  tmpTempDose = 60;
-                }
-                tmpTempDose = (tmpTempDose - 1) % 60;
-              }
-              lastPosition = virtualPosition;
+        }
+
+        // Gestion config nb seconde pour la dose selectionéz
+        lcd.setCursor(0, 0);
+        lcd.print ("Tps(s)for : ");
+        lcd.print (Dose / 100, DEC);
+        lcd.print (Dose % 100, DEC);
+        lcd.print ("g");
+
+        lcd.setCursor(0, 1);
+        lcd.print ("Duree =  ");
+        lcd.print (tmpTempDose / 10, DEC);
+        lcd.print (tmpTempDose % 10, DEC);
+        lcd.print ("s   ");
+        exit_loop = false;
+        while (!exit_loop) {
+          if (millis() - lastmillis > delai_clignotement ) {
+            lastmillis = millis();
+            if ( stat ) {
+              stat = !stat;
               lcd.setCursor(9, 1);
               lcd.print (tmpTempDose / 10, DEC);
               lcd.print (tmpTempDose % 10, DEC);
-
-            }
-            //
-            if ((!digitalRead(PinSW))) { //Save new dose
-              delay(250);
-              TimeDose = tmpTempDose;
+            } else {
               lcd.setCursor(9, 1);
-              lcd.print (TimeDose / 10, DEC);
-              lcd.print (TimeDose % 10, DEC);
-              //FlagConfActivation=!FlagConfActivation;
-              exit_loop = !exit_loop;
-            }
+              lcd.print ("  ");
+              stat = !stat;
 
+            }
+          }
+          //Choix de la temps en seconde pour la dose
+          if (virtualPosition != lastPosition ) {
+            if  (virtualPosition > lastPosition ) {  //Heure suivante
+              tmpTempDose = (tmpTempDose + 1 ) % 60 ;
+            } else if (virtualPosition < lastPosition ) { //Heure precedent
+              if (tmpTempDose == 0) {
+                tmpTempDose = 60;
+              }
+              tmpTempDose = (tmpTempDose - 1) % 60;
+            }
+            lastPosition = virtualPosition;
+            lcd.setCursor(9, 1);
+            lcd.print (tmpTempDose / 10, DEC);
+            lcd.print (tmpTempDose % 10, DEC);
 
           }
-        
+          //
+          if ((!digitalRead(PinSW))) { //Save new dose
+            delay(250);
+            TimeDose = tmpTempDose;
+            lcd.setCursor(9, 1);
+            lcd.print (TimeDose / 10, DEC);
+            lcd.print (TimeDose % 10, DEC);
+            //FlagConfActivation=!FlagConfActivation;
+            exit_loop = !exit_loop;
+          }
+        }
       }
 
 
@@ -688,8 +649,9 @@ void affichage() {
 
 
 void affichage_Gestion_Alarm() {
+  //int exit_menu =false;
   switch (posMenuAlarm) {
-    case 7 : // SaveConfig EEPROM
+    case 10 : // SaveConfig EEPROM
       lcd.setCursor(0, 0);
       lcd.print ("> Save EEPROM           ");
       lcd.setCursor(0, 1);
@@ -704,20 +666,43 @@ void affichage_Gestion_Alarm() {
       }
 
       break;
-    case 8:
+    case 11:
       lcd.setCursor(0, 0);
       lcd.print ("> Exit          ");
       lcd.setCursor(0, 1);
       lcd.print ("                ");
       if ((!digitalRead(PinSW))) {
         delay(350);
-        exit_menu = !exit_menu;
+        exit_menu = true;
         posMenuAlarm = 0;
       }
       break;
     default :
       affiche_alarme(posMenuAlarm);
+      //Serial.println(F("Sortie menu Alarme"));
       break;
+  }
+}
+
+void navigation_menu_alarm() {
+  //detecter rotation
+  if ( virtualPosition != lastPosition) {
+    lcd.backlight();
+    StarTimeLight = millis();
+    lcd.setCursor(0, 1);
+    //lcd.print("                ");
+    if  (virtualPosition > lastPosition ) {  //menu suivant
+      posMenuAlarm = (posMenuAlarm + 1 ) % NumberMenuAlarm ;
+    } else if (virtualPosition < lastPosition ) { //menu precedent
+      if (posMenuAlarm == 0) {
+        posMenuAlarm = (NumberMenuAlarm);
+      }
+      posMenuAlarm = (posMenuAlarm - 1) % NumberMenuAlarm;
+    }
+    lastPosition = virtualPosition;
+    Serial.print(F("Position menu Alarm: "));
+    Serial.println(posMenuAlarm);
+
   }
 }
 
@@ -726,30 +711,41 @@ void affiche_alarme(int numAlarme) {
   DateTime now = rtc.now();
   bool exit_menu2 = false;
   int posSelectionUpdate = 0;
+  char datelistlcd[7][16] = {
+    "Dimanche",
+    "Lundi   ",
+    "Mardi   ",
+    "Mercredi",
+    "Jeudi   ",
+    "Vendredi",
+    "Samedi  "
+  };
+
+  //  String str =  Convert_Bool(Tache[numAlarme].get_status());
+  //  Serial.println (str);
+  //Serial.println (F("Menu Affiche Alarme"));
+
   lcd.setCursor(0, 0);
   lcd.print ("Alarme ");
   lcd.print (posMenuAlarm);
   lcd.setCursor(8, 0);
   lcd.print ("     ");
-  lcd.print (Convert_Bool( ActiveDistrib[numAlarme]) );
+  lcd.print (Convert_Bool(Tache[numAlarme].get_status()));
+  //lcd.print (Tache[numAlarme].get_status());
+
   lcd.setCursor(0, 1);
   //Recuperer et afficher information alarme numAlarme
-  if (DayDistrib[numAlarme] == 9) {
-    lcd.print("No Config       ");
-  }
-  else {
-    lcd.print(daysOfTheWeek[DayDistrib[numAlarme]]);
-    lcd.setCursor(8, 1);
-    lcd.print ("|");
-    lcd.print (HeureDistrib[numAlarme] / 10, DEC);
-    lcd.print (HeureDistrib[numAlarme] % 10, DEC);
-    lcd.print (":");
-    lcd.print (MinuteDistrib[numAlarme] / 10, DEC);
-    lcd.print (MinuteDistrib[numAlarme] % 10, DEC);
-    lcd.print (" ");
-    lcd.print (QuantiteDistrib[numAlarme]);
+  lcd.print(datelistlcd[Tache[numAlarme].get_date()]);
+  lcd.setCursor(8, 1);
+  lcd.print ("|");
+  lcd.print (Tache[numAlarme].get_heure() / 10, DEC);
+  lcd.print (Tache[numAlarme].get_heure() % 10, DEC);
+  lcd.print (":");
+  lcd.print (Tache[numAlarme].get_minute() / 10, DEC);
+  lcd.print (Tache[numAlarme].get_minute() % 10, DEC);
+  lcd.print (" ");
+  lcd.print (Tache[numAlarme].get_nbDose());
 
-  }
 
   //boucle pour update alarme / jour / heure / minute / Qte  si on clique
   if ((!digitalRead(PinSW)))  {
@@ -759,277 +755,207 @@ void affiche_alarme(int numAlarme) {
     int exit_update = 0;
 
     bool stat = false;
-    int tmpOnOff, tmpDay, tmpHour, tmpMinute, TmpQuantite;
-    char datelistlcd[7][16] = {
-      "Dimanche",
-      "Lundi   ",
-      "Mardi   ",
-      "Mercredi",
-      "Jeudi   ",
-      "Vendredi",
-      "Samedi  "
-    };
-    //if alarm sans config, clean ligne 2 LCD
-    if (DayDistrib[numAlarme] == 9) {
-      tmpDay = now.dayOfTheWeek();
-      lcd.setCursor(0, 1);
-      lcd.print(datelistlcd[tmpDay]);
-      lcd.print("|00:00 0");
-    } else {
-      tmpDay = DayDistrib[numAlarme];
-    }
+    int tmp ;//,tmpOnOff, tmpDay, tmpHour, tmpMinute, TmpQuantite;
 
     while (!exit_update) {  //Parcourir la liste des attribut de l'alarme
       switch (posSelectionUpdate) {
         case 0: //Gestion du OnOff
-          tmpOnOff = ActiveDistrib[numAlarme];
-
-          while (!exit_loop) { //boucle pour parcourir les caracteristiques de l'alarme
-            currentTime = millis();
-            //             Serial.print("last : ");
-            //             Serial.println(lastmillis);
-            //             Serial.print("Millis : ");
-            //             Serial.println(currentTime);
-            //             Serial.print("currentTime-millis : ");
-            //             Serial.print(currentTime - lastmillis);
-            //             Serial.print(" : ");
-            //             Serial.println(delai_clignotement);
-
-            if (currentTime - lastmillis >= delai_clignotement ) {
-              lastmillis = currentTime;
-              if ( stat ) {
-                stat = !stat;
-                lcd.setCursor(13, 0);
-                lcd.print (Convert_Bool(tmpOnOff));
-                ;
-              } else {
-                lcd.setCursor(13, 0);
-                lcd.print ("     ");
-                stat = !stat;
-              }
-            }
-            if  (virtualPosition != lastPosition ) {
-              tmpOnOff = !tmpOnOff;
-              lastPosition = virtualPosition;
-              lcd.setCursor(13, 0);
-              lcd.print (Convert_Bool(tmpOnOff));
-            }
-
-            if ((!digitalRead(PinSW))) { //Save new config alarm
-              delay(250);
-              ActiveDistrib[numAlarme] = tmpOnOff;
-              posSelectionUpdate += 1;
-              lcd.setCursor(13, 0);
-              lcd.print (Convert_Bool(tmpOnOff));
-
-              //FlagConfActivation=!FlagConfActivation;
-              exit_loop = !exit_loop;
-            }
-          }
+          //GestionUpdateAlarm (int val, int Type, int LineLCD, int PosLCD, int Decimal, int Taille,int taille_char )
+          tmp = GestionUpdateAlarm (Tache[numAlarme].get_status(), STATUS, 0, 13, 1, 2, 5);
+          Tache[numAlarme].set_status(tmp);
+          posSelectionUpdate += 1;
+          lcd.setCursor(13, 0);
+          lcd.print (Convert_Bool( Tache[numAlarme].get_status()));
+          //lcd.print (Tache[numAlarme].get_status());
           break;
         case 1: //Gestion du jour
-
-          exit_loop = 0;
-          while (!exit_loop) {
-
-            currentTime = millis();
-            if (millis() - lastmillis > delai_clignotement ) {
-              lastmillis = millis();
-              if ( stat ) {
-                stat = !stat;
-                lcd.setCursor(0, 1);
-                lcd.print (datelistlcd[tmpDay]);
-                //Serial.println("Affiche");
-              } else {
-                lcd.setCursor(0, 1);
-                lcd.print ("        ");
-                stat = !stat;
-                //Serial.println("Caché");
-              }
-            }
-            //Lister les jours
-            if  (virtualPosition > lastPosition ) {  //jour suivant
-              tmpDay = (tmpDay + 1 ) % 7 ;
-              lcd.setCursor(0, 1);
-              lcd.print(datelistlcd[tmpDay]);
-
-            } else if (virtualPosition < lastPosition ) { //jour precedent
-              if (tmpDay == 0) {
-                tmpDay = 7;
-              }
-              tmpDay = (tmpDay - 1) % 7;
-              lcd.setCursor(0, 1);
-              lcd.print(datelistlcd[tmpDay]);
-            }
-            lastPosition = virtualPosition;
-
-            if ((!digitalRead(PinSW))) { //Save new config alarm
-              delay(250);
-              DayDistrib[numAlarme] = tmpDay;
-              posSelectionUpdate += 1;
-              lcd.setCursor(0, 1);
-              lcd.print(datelistlcd[tmpDay]);
-              //FlagConfActivation=!FlagConfActivation;
-              exit_loop = !exit_loop;
-
-            }
-          }
+          tmp = GestionUpdateAlarm (Tache[numAlarme].get_date(), DATE, 1, 0, 10, 7, 8);
+          Tache[numAlarme].set_date(tmp);
+          posSelectionUpdate += 1;
+          lcd.setCursor(0, 1);
+          lcd.print(datelistlcd[Tache[numAlarme].get_date()]);
 
           break;
         case 2: //Gestion de l heure
-          tmpHour = HeureDistrib[numAlarme];
-          exit_loop = 0;
-          while (!exit_loop) {
-            currentTime = millis();
-            if (millis() - lastmillis > delai_clignotement ) {
-              lastmillis = millis();
-              if ( stat ) {
-                stat = !stat;
-                lcd.setCursor(9, 1);
-                lcd.print (tmpHour / 10, DEC);
-                lcd.print (tmpHour % 10, DEC);
-                Serial.println("Affiche");
-              } else {
-                lcd.setCursor(9, 1);
-                lcd.print ("  ");
-                stat = !stat;
-                Serial.println("Caché");
-              }
-            }
-            //Lister les heures
-            if (virtualPosition != lastPosition ) {
-              if  (virtualPosition > lastPosition ) {  //Heure suivante
-                tmpHour = (tmpHour + 1 ) % 24 ;
-              } else if (virtualPosition < lastPosition ) { //Heure precedent
-                if (tmpHour == 0) {
-                  tmpHour = 24;
-                }
-                tmpHour = (tmpHour - 1) % 24;
-              }
-              lastPosition = virtualPosition;
-              lcd.setCursor(9, 1);
-              lcd.print (tmpHour / 10, DEC);
-              lcd.print (tmpHour % 10, DEC);
-            }
-
-            if ((!digitalRead(PinSW))) { //Save new config alarm
-              delay(250);
-              HeureDistrib[numAlarme] = tmpHour;
-              posSelectionUpdate += 1;
-              lcd.setCursor(9, 1);
-              lcd.print (HeureDistrib[numAlarme] / 10, DEC);
-              lcd.print (HeureDistrib[numAlarme] % 10, DEC);
-              //FlagConfActivation=!FlagConfActivation;
-              exit_loop = !exit_loop;
-
-            }
-          }
-
+          tmp = GestionUpdateAlarm (Tache[numAlarme].get_heure(), HEURE, 1, 9, 10, 24, 2);
+          Tache[numAlarme].set_heure(tmp);
+          posSelectionUpdate += 1;
+          lcd.setCursor(9, 1);
+          lcd.print (Tache[numAlarme].get_heure() / 10, DEC);
+          lcd.print (Tache[numAlarme].get_heure() % 10, DEC);
           break;
         case 3: //Gestion des minutes
-          tmpMinute = MinuteDistrib[numAlarme];
-          exit_loop = 0;
-          while (!exit_loop) {
-            currentTime = millis();
-            if (millis() - lastmillis > delai_clignotement ) {
-              lastmillis = millis();
-              if ( stat ) {
-                stat = !stat;
-                lcd.setCursor(12, 1);
-                lcd.print (tmpMinute / 10, DEC);
-                lcd.print (tmpMinute % 10, DEC);
-              } else {
-                lcd.setCursor(12, 1);
-                lcd.print ("  ");
-                stat = !stat;
-              }
-            }
-            //Lister les Minutes
-            if (virtualPosition != lastPosition ) {
-              if  (virtualPosition > lastPosition ) {  //Heure suivante
-                tmpMinute = (tmpMinute + 1 ) % 60 ;
-              } else if (virtualPosition < lastPosition ) { //Heure precedent
-                if (tmpMinute == 0) {
-                  tmpMinute = 60;
-                }
-                tmpMinute = (tmpMinute - 1) % 60;
-              }
-              lastPosition = virtualPosition;
-              lcd.setCursor(12, 1);
-              lcd.print (tmpMinute / 10, DEC);
-              lcd.print (tmpMinute % 10, DEC);
-            }
-            if ((!digitalRead(PinSW))) { //Save new config alarm
-              delay(250);
-              MinuteDistrib[numAlarme] = tmpMinute;
-              posSelectionUpdate += 1;
-              lcd.setCursor(12, 1);
-
-              lcd.print (MinuteDistrib[numAlarme] / 10, DEC);
-              lcd.print (MinuteDistrib[numAlarme] % 10, DEC);
-              //FlagConfActivation=!FlagConfActivation;
-              exit_loop = !exit_loop;
-            }
-          }
-
+          tmp = GestionUpdateAlarm (Tache[numAlarme].get_minute(), MINUTE, 1, 12, 10, 60, 2);
+          Tache[numAlarme].set_minute(tmp);
+          posSelectionUpdate += 1;
+          lcd.setCursor(12, 1);
+          lcd.print (Tache[numAlarme].get_minute() / 10, DEC);
+          lcd.print (Tache[numAlarme].get_minute() % 10, DEC);
           break;
         case 4: //Gestion des nb gobelet
-          TmpQuantite = QuantiteDistrib[numAlarme];
-          exit_loop = 0;
-          while (!exit_loop) {
-            currentTime = millis();
-            if (millis() - lastmillis > delai_clignotement ) {
-              lastmillis = millis();
-              if ( stat ) {
-                stat = !stat;
-                lcd.setCursor(15, 1);
-                lcd.print (TmpQuantite);
-              } else {
-                lcd.setCursor(15, 1);
-                lcd.print ("  ");
-                stat = !stat;
-              }
-            }
-            //Lister les nb gobelet
-            if (virtualPosition != lastPosition ) {
-              if  (virtualPosition > lastPosition ) {  //+ 1 gobelet
-                TmpQuantite = (TmpQuantite + 1 ) % 10 ;
-              } else if (virtualPosition < lastPosition ) { //Heure precedent
-                if (TmpQuantite == 0) {
-                  TmpQuantite = 10;
-                }
-                TmpQuantite = (TmpQuantite - 1) % 10;
-              }
-              lastPosition = virtualPosition;
-              lcd.setCursor(15, 1);
-              lcd.print (TmpQuantite);
-            }
-            if ((!digitalRead(PinSW))) { //Save new config alarm
-              delay(250);
-              QuantiteDistrib[numAlarme] = TmpQuantite;
-              posSelectionUpdate += 1;
-              lcd.setCursor(15, 1);
-
-              lcd.print ( QuantiteDistrib[numAlarme]);
-              //FlagConfActivation=!FlagConfActivation;
-              exit_loop = !exit_loop;
-              exit_update = !exit_update;
-            }
-          }
-
+          tmp = GestionUpdateAlarm (Tache[numAlarme].get_nbDose(), NBDOSE, 1, 15, 1, 10, 1);
+          Tache[numAlarme].set_nbDose(tmp);
+          posSelectionUpdate += 1;
+          lcd.setCursor(15, 1);
+          lcd.print(Tache[numAlarme].get_nbDose());
+          exit_update = 1;
+          lastPosition = virtualPosition;
           break;
       }
 
     }
   }
+}
 
-  //
-  //    while(!exit_menu2){
-  //    if ((!digitalRead(PinSW))){
-  //      delay(150);
-  //      exit_menu=!exit_menu;
-  //    }
-  //   }
+
+int GestionUpdateAlarm (int val, int Type, int LineLCD, int PosLCD, int Decimal, int Taille, int taille_char ) {
+  // Type : represente le type de donnée a gerer (Jour, date, heure, ...)
+  // LineLCD : identifer la ligne du LCD pour affichage data
+  // PosLCD : Position sur la ligne du LCD
+  // Decimal : Pour permettre l'affiche sur X caractère
+  // Taille : Gestion des boucles de selection, 60 pour les minutes, 24 pour les heures, 7 pour les jour
+  // taille_char  ; taille pour effacement
+
+  int tmp = val;
+  int exit_loop = 0;
+  char space;
+  int stat = true;
+  char datelistlcd[7][16] = {
+    "Dimanche",
+    "Lundi   ",
+    "Mardi   ",
+    "Mercredi",
+    "Jeudi   ",
+    "Vendredi",
+    "Samedi  "
+  };
+  //    Serial.print("Val : ");
+  //    Serial.println(val);
+  //    Serial.print("Type :");
+  //    Serial.println(Type);
+  //    Serial.print("Decimal :");
+  //    Serial.println(Decimal);
+  //    Serial.print("Taille :");
+  //    Serial.println(Taille);
+  //    Serial.print("Taille Char:");
+  //    Serial.println(taille_char);
+  //    Serial.print("lcd : (");
+  //    Serial.print(PosLCD);
+  //    Serial.print(",");
+  //    Serial.print(LineLCD);
+  //    Serial.println(")");
+
+
+
+  while (!exit_loop) {
+    currentTime = millis();
+    if (millis() - lastmillis > delai_clignotement ) {
+      lastmillis = millis();
+      if ( stat ) {    //On affiche donnée en fonction de son type pour le clignotement
+        stat = !stat;
+        //Serial.println(F("Afficher"));
+        lcd.setCursor(PosLCD, LineLCD);
+        switch (Type) {
+          case DATE:
+            lcd.print(datelistlcd[tmp]);
+            break;
+          case STATUS:
+            lcd.print (Convert_Bool(tmp));
+            break;
+          case NBDOSE:
+            lcd.print(tmp);
+            break;
+          default:
+            //Serial.println(F(" defaut"));
+            lcd.print (tmp / Decimal, DEC);
+            lcd.print (tmp % Decimal, DEC);
+            break;
+        }
+      } else {   //on efface la donnée pour clignotement
+        lcd.setCursor(PosLCD, LineLCD);
+        Serial.println(taille_char);
+        if (taille_char == 1) {
+          lcd.print(" ");
+        }
+        if (taille_char == 2) {
+          lcd.print("  ");
+        }
+        if (taille_char == 3) {
+          lcd.print("   ");
+        }
+        if (taille_char == 5) {
+          lcd.print("     ");
+        }
+        if (taille_char == 8) {
+          lcd.print("        ");
+        }
+        stat = !stat;
+        // Serial.println(F("Caché"));
+      }
+
+    }
+
+
+    //Lister les valeurs
+    if (virtualPosition != lastPosition ) {
+      //      Serial.print(virtualPosition);
+      //      Serial.print(" / ");
+      //      Serial.print(lastPosition);
+      //      Serial.print(" - Taille : ");
+      //      Serial.print(Taille);
+      //      Serial.print(" - Type : ");
+      //      Serial.print(Type);
+      //      Serial.print(" - STATUS : ");
+      //      Serial.println(STATUS);
+
+
+      if  (virtualPosition > lastPosition ) {  //Heure suivante
+        tmp = (tmp + 1 ) % Taille ;
+      } else if (virtualPosition < lastPosition ) { //Heure precedent
+        if (tmp == 0) {
+          tmp = Taille;
+        }
+        tmp = (tmp - 1) % Taille;
+      }
+      //      Serial.println (tmp);
+      lcd.setCursor(PosLCD, LineLCD);
+      lastPosition = virtualPosition;
+
+      switch (Type) {  //Affichage durant rotation
+        case DATE:
+          //          Serial.println("Affichage date");
+          lcd.print(datelistlcd[tmp]);
+          break;
+        case STATUS:
+          //          Serial.println("Affichage pour Status");
+          lcd.print (Convert_Bool(tmp));
+          //lcd.print (tmp);
+          break;
+        case NBDOSE:
+          lcd.print (tmp);
+          break;
+        default:
+          //          Serial.println("Affichage default");
+          lcd.print (tmp / Decimal, DEC);
+          lcd.print (tmp % Decimal, DEC);
+          break;
+      }
+    }
+
+    if ((!digitalRead(PinSW))) { //Save new config alarm
+      delay(250);
+      //      Tache[numAlarme].set_heure(tmpHour);                                //a gerere en fonction du type
+      //      posSelectionUpdate += 1;
+      //      lcd.setCursor(9, 1);                                                //affichage en fonctio du type
+      //      lcd.print (Tache[numAlarme].get_heure() / 10, DEC);                  //affichage en fonctio du type
+      //      lcd.print (Tache[numAlarme].get_heure() % 10, DEC);                  //affichage en fonctio du type
+      //      //FlagConfActivation=!FlagConfActivation;
+      exit_loop = !exit_loop;
+
+    }
+
+  }
+  return tmp;
 }
 
 
@@ -1037,44 +963,37 @@ String Convert_Bool(bool val) {
   String str;
   if (val) {
     str = "ON ";
-  } else {
+  }
+  else {
     str = "OFF";
   }
-
   return str;
 }
 
 void SaveConfig_EEPROM() {
-  //lcd.setCursor(0, 0);
-  //lcd.print ("TEST EEPROM SAVE");
-  //lcd.setCursor(0, 1);
-  //lcd.print ("PRESS TO SAVE   ");
-  //Test EEPROM config and save
-  //if ((!digitalRead(PinSW))) {
-  Serial.println("Save EEPROM");
-  for (int compteur = 0 ; compteur < 7 ; compteur++)
-  {
-    configuration.Day[compteur] = DayDistrib[compteur];
-    configuration.Heure[compteur] = HeureDistrib[compteur];
-    configuration.Minute[compteur] = MinuteDistrib[compteur];
-    configuration.Active_Inactive[compteur] = ActiveDistrib[compteur];
-    configuration.Duree[compteur] = QuantiteDistrib[compteur];
 
-    Serial.print("Save Conf num ");
+  //  Serial.println("Save EEPROM");
+  for (byte compteur = 0 ; compteur <= NbTaches ; compteur++)
+  {
+    configuration.TacheEEPROM[compteur] = Tache[compteur];
+
+    Serial.print(F("Save Conf num "));
     Serial.print(compteur);
-    Serial.print(" : ");
-    Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
-    Serial.print(" / ");
-    Serial.print(HeureDistrib[compteur]);
-    Serial.print(":");
-    Serial.print(MinuteDistrib[compteur]);
-    Serial.print(":");
-    Serial.print(" / ");
-    Serial.print(ActiveDistrib[compteur]);
-    Serial.print(" / ");
-    Serial.println(QuantiteDistrib[compteur]);
+    Serial.print(F(" : "));
+    Serial.print(configuration.TacheEEPROM[compteur].get_date());
+    Serial.print(F(" / "));
+    Serial.print(configuration.TacheEEPROM[compteur].get_heure());
+    Serial.print(F(":"));
+    Serial.print(configuration.TacheEEPROM[compteur].get_minute());
+    Serial.print(F(" / "));
+    Serial.print(configuration.TacheEEPROM[compteur].get_nbDose());
+    Serial.print(F(" / "));
+    Serial.println(configuration.TacheEEPROM[compteur].get_status());
   }
-  //EEPROM_writeAnything(0, configuration);
+  configuration.DoseEEPROM = Dose;
+  configuration.TimeDoseEEPROM = TimeDose;
+
+  EEPROM_writeAnything(0, configuration);
 
 }
 
@@ -1082,60 +1001,35 @@ void LoadConfig_EEPROM() {
 
   Serial.println("Read EEPROM");
   EEPROM_readAnything(0, configuration);
-  int compteur;
-  for ( compteur = 0 ; compteur < 7 ; compteur++)
+  byte compteur;
+  for ( compteur = 0 ; compteur < NbTaches ; compteur++)
   {
-    DayDistrib[compteur] = configuration.Day[compteur];
-    HeureDistrib[compteur] = configuration.Heure[compteur];
-    MinuteDistrib[compteur] = configuration.Minute[compteur];
-    ActiveDistrib[compteur] = ActiveDistrib[compteur] ;
-    QuantiteDistrib[compteur] = configuration.Duree[compteur];
+    Tache[compteur].set_date(configuration.TacheEEPROM[compteur].get_date());
+    Tache[compteur].set_heure(configuration.TacheEEPROM[compteur].get_heure());
+    Tache[compteur].set_minute(configuration.TacheEEPROM[compteur].get_minute());
+    Tache[compteur].set_nbDose(configuration.TacheEEPROM[compteur].get_nbDose());
+    Tache[compteur].set_status(configuration.TacheEEPROM[compteur].get_status());
+
+
+    Serial.print(F("EEPROM Conf num "));
+    Serial.print(compteur);
+    Serial.print(F(" : "));
+    Serial.print(Tache[compteur].get_date());
+    Serial.print(F(" / "));
+    Serial.print(Tache[compteur].get_heure());
+    Serial.print(F(":"));
+    Serial.print(Tache[compteur].get_minute());
+    Serial.print(F(" / "));
+    Serial.print(Tache[compteur].get_nbDose());
+    Serial.print(F(" / "));
+    Serial.println(Tache[compteur].get_status());
   }
-  Serial.print("EEPROM Conf num ");
-  Serial.print(compteur);
-  Serial.print(" : ");
-  Serial.print(daysOfTheWeek[configuration.Day[compteur]]);
-  Serial.print(" / ");
-  Serial.print(HeureDistrib[compteur]);
-  Serial.print("h");
-  Serial.print(" / ");
-  Serial.print(ActiveDistrib[compteur]);
-  Serial.print(" / ");
-  Serial.println(QuantiteDistrib[compteur]);
+  Dose = configuration.TimeDoseEEPROM;
+  TimeDose = configuration.TimeDoseEEPROM;
 
 }
 
 
-
-
-void scrollInFromRight (int line, char str1[]) {
-  // Written by R. Jordan Kreindler June 2016
-  i = strlen(str1);
-  for (j = 16; j >= 0; j--) {
-    lcd.setCursor(0, line);
-    for (k = 0; k <= 15; k++) {
-      lcd.print(" "); // Clear line
-    }
-    lcd.setCursor(j, line);
-    lcd.print(str1);
-    delay(delayTime2);
-  }
-}
-
-
-void scrollInFromLeft (int line, char str1[]) {
-  // Written by R. Jordan Kreindler June 2016
-  i = 40 - strlen(str1);
-  line = line - 1;
-  for (j = i; j <= i + 16; j++) {
-    for (k = 0; k <= 15; k++) {
-      lcd.print(" "); // Clear line
-    }
-    lcd.setCursor(j, line);
-    lcd.print(str1);
-    delay(delayTime2);
-  }
-}
 
 
 
