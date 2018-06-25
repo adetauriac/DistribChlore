@@ -269,11 +269,11 @@ void setup() {
   FlagStart = 0;
   //DateTime now = rtc.now();
 
-   //Load EEPROM pour recharger les configs
-   LoadConfig_EEPROM();
-   //Configuration manuelle des taches 
-   //Tache[0].set_global(0,23,0,2,1);
-   
+  //Load EEPROM pour recharger les configs
+  LoadConfig_EEPROM();
+  //Configuration manuelle des taches
+  //Tache[0].set_global(0,23,0,2,1);
+
 }
 
 
@@ -306,49 +306,50 @@ void loop() {
   //Parcour tableau des jours configuréspour execution si on est sur un nouveau jour
 
 
-  for (byte i = 0 ; i < NbTaches ; i++)  //parcourir le tableau de jour configuré pour distribution
-  {
+  if ( FlagStart == 0 ) {  // Test si tache active, uniquement si la tache precedente n'est plus en cours
+    for (byte i = 0 ; i < NbTaches ; i++)  //parcourir le tableau de jour configuré pour distribution
+    {
 
-    //Delais_Moteur = ( ((long)Tache[8].get_nbDose()) * ((long)TimeDose) ) * 1000; // TO DO fonction pour convertir nb dose avec temps pour 1 dose et passage en milliseconde (*1000)
+      //Delais_Moteur = ( ((long)Tache[8].get_nbDose()) * ((long)TimeDose) ) * 1000; // TO DO fonction pour convertir nb dose avec temps pour 1 dose et passage en milliseconde (*1000)
 
-    //Si tache "i" n'a pas encore été réalisé ET
-    //  + on est le bon jour
-    //  + tache active
-    //  + date et heure correte
-    //  + Tache activée
-    //  ==> on active la distribution
-    if ( !TachesDone[i] && (now.dayOfTheWeek() == Tache[i].get_date()) && Tache[i].get_status() && now.hour() == Tache[i].get_heure() ) { //&& now.minute() == Tache[i].get_minute()  ) {
-      Serial.print(F("Nous sommes un "));
-      //Serial.println(daysOfTheWeek[now.dayOfTheWeek()]);
-      Serial.print(F("Lancement "));
-      lcd.clear();
-      FlagStart = 1;
-      Delais_Moteur = Tache[i].get_nbDose() * TimeDose * 1000;; // TO DO fonction pour convertir nb dose avec temps pour 1 dose
-      remainingTime=Delais_Moteur;
-      Serial.print(Delais_Moteur);
-      //On indique que le tache a été jouée pour la journée en cour
-      TachesDone[i] = true;
-      StartTime = millis();
-      lastActionTime=StartTime;
-      break;
+      //Si tache "i" n'a pas encore été réalisé ET
+      //  + on est le bon jour
+      //  + tache active
+      //  + date et heure correte
+      //  + Tache activée
+      //  ==> on active la distribution
+      if ( !TachesDone[i] && (now.dayOfTheWeek() == Tache[i].get_date()) && Tache[i].get_status() && now.hour() == Tache[i].get_heure() && now.minute() == Tache[i].get_minute() ) { //&& now.minute() == Tache[i].get_minute()  ) {
+        Serial.print(F("Nous sommes un "));
+        //Serial.println(daysOfTheWeek[now.dayOfTheWeek()]);
+        Serial.print(F("Lancement "));
+        lcd.clear();
+        FlagStart = 1;
+        Delais_Moteur = Tache[i].get_nbDose() * TimeDose * 1000;; // TO DO fonction pour convertir nb dose avec temps pour 1 dose
+        remainingTime = Delais_Moteur;
+        Serial.print(Delais_Moteur);
+        //On indique que le tache a été jouée pour la journée en cour
+        TachesDone[i] = true;
+        StartTime = millis();
+        lastActionTime = StartTime;
+        break;
+      }
     }
   }
-
 
   // Si flag execution actif + dans la durée d'execution, on fait tourner le moteur
 
   //Serial.print(FlagStart);
-  if (FlagStart==1  ) {  //Pour indiquer que le moteur doit tourner en automatique
+  if (FlagStart == 1  ) { //Pour indiquer que le moteur doit tourner en automatique
     //Serial.print("If FlagStart 1 on test le timing");
-    
+
     if ( ( millis() - StartTime < Delais_Moteur) && FlagStart == 1 ) {
       Serial.println(F("Start Moteur "));
       analogWrite(moteurENB, 255);
       sprintf(message1, "Distib... : %2d s", (Delais_Moteur / 1000));
-      if ( ( millis() - lastActionTime > 1000 )){
-         remainingTime=remainingTime-1000;
-         lastActionTime=millis();
-         
+      if ( ( millis() - lastActionTime > 1000 )) {
+        remainingTime = remainingTime - 1000;
+        lastActionTime = millis();
+
       }
       sprintf(message2, "Reste : %2d s", (remainingTime) / 1000);
 
@@ -361,7 +362,7 @@ void loop() {
     else  {
       Serial.print(F("Stop Moteur "));
       analogWrite(moteurENB, 0);
-      FlagStart=!FlagStart;
+      FlagStart = !FlagStart;
       lcd.clear();
     }
   }
@@ -889,7 +890,7 @@ int GestionUpdateAlarm (int val, int Type, int LineLCD, int PosLCD, int Decimal,
           lcd.print("        ");
         }
         stat = !stat;
-       // Serial.println(F("Caché"));
+        // Serial.println(F("Caché"));
       }
 
     }
@@ -975,19 +976,19 @@ void SaveConfig_EEPROM() {
   for (byte compteur = 0 ; compteur <= NbTaches ; compteur++)
   {
     configuration.TacheEEPROM[compteur] = Tache[compteur];
-    
-        Serial.print(F("Save Conf num "));
-        Serial.print(compteur);
-        Serial.print(F(" : "));
-        Serial.print(configuration.TacheEEPROM[compteur].get_date());
-        Serial.print(F(" / "));
-        Serial.print(configuration.TacheEEPROM[compteur].get_heure());
-        Serial.print(F(":"));
-        Serial.print(configuration.TacheEEPROM[compteur].get_minute());
-        Serial.print(F(" / "));
-        Serial.print(configuration.TacheEEPROM[compteur].get_nbDose());
-        Serial.print(F(" / "));
-        Serial.println(configuration.TacheEEPROM[compteur].get_status());
+
+    Serial.print(F("Save Conf num "));
+    Serial.print(compteur);
+    Serial.print(F(" : "));
+    Serial.print(configuration.TacheEEPROM[compteur].get_date());
+    Serial.print(F(" / "));
+    Serial.print(configuration.TacheEEPROM[compteur].get_heure());
+    Serial.print(F(":"));
+    Serial.print(configuration.TacheEEPROM[compteur].get_minute());
+    Serial.print(F(" / "));
+    Serial.print(configuration.TacheEEPROM[compteur].get_nbDose());
+    Serial.print(F(" / "));
+    Serial.println(configuration.TacheEEPROM[compteur].get_status());
   }
   configuration.DoseEEPROM = Dose;
   configuration.TimeDoseEEPROM = TimeDose;
@@ -998,18 +999,18 @@ void SaveConfig_EEPROM() {
 
 void LoadConfig_EEPROM() {
 
-    Serial.println("Read EEPROM");
-    EEPROM_readAnything(0, configuration);
-    byte compteur;
-    for ( compteur = 0 ; compteur < NbTaches ; compteur++)
-    {
-      Tache[compteur].set_date(configuration.TacheEEPROM[compteur].get_date());
-      Tache[compteur].set_heure(configuration.TacheEEPROM[compteur].get_heure());
-      Tache[compteur].set_minute(configuration.TacheEEPROM[compteur].get_minute());
-      Tache[compteur].set_nbDose(configuration.TacheEEPROM[compteur].get_nbDose());
-      Tache[compteur].set_status(configuration.TacheEEPROM[compteur].get_status());
-    
-    
+  Serial.println("Read EEPROM");
+  EEPROM_readAnything(0, configuration);
+  byte compteur;
+  for ( compteur = 0 ; compteur < NbTaches ; compteur++)
+  {
+    Tache[compteur].set_date(configuration.TacheEEPROM[compteur].get_date());
+    Tache[compteur].set_heure(configuration.TacheEEPROM[compteur].get_heure());
+    Tache[compteur].set_minute(configuration.TacheEEPROM[compteur].get_minute());
+    Tache[compteur].set_nbDose(configuration.TacheEEPROM[compteur].get_nbDose());
+    Tache[compteur].set_status(configuration.TacheEEPROM[compteur].get_status());
+
+
     Serial.print(F("EEPROM Conf num "));
     Serial.print(compteur);
     Serial.print(F(" : "));
@@ -1022,9 +1023,9 @@ void LoadConfig_EEPROM() {
     Serial.print(Tache[compteur].get_nbDose());
     Serial.print(F(" / "));
     Serial.println(Tache[compteur].get_status());
-    }
-    Dose=configuration.TimeDoseEEPROM;
-    TimeDose=configuration.TimeDoseEEPROM;
+  }
+  Dose = configuration.TimeDoseEEPROM;
+  TimeDose = configuration.TimeDoseEEPROM;
 
 }
 
