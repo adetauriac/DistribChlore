@@ -86,7 +86,7 @@ struct config_t
 } configuration;
 
 
-long correction, remainingTime, lastDistributionTime , elapsedLightTime, lastActionTime = 0L;
+long correction, remainingTime, lastDistributionTime , elapsedLightTime, lastActionTime,lastTimeSend = 0L;
 //unsigned long lightDuration = 10L;
 
 // Definition RTC
@@ -107,6 +107,10 @@ int tmpDose, tmpTempDose;
 
 byte previous_dayWeek;
 long Delais_Moteur = 5000L; //en milliseconde, a recuperer de EEPROM ensuite
+
+#define five 300000  //milliseconds in five minutes
+#define OneHour 3600000  //milliseconds in an hour
+
 
 const long delai_clignotement = 500; //temps de clignotement LCD
 bool FlagStart;
@@ -241,6 +245,7 @@ void setup() {
   delay(2000);
   lcd.print("  Starting...   ");
   StarTimeLight = millis();
+  lastTimeSend = millis();
   Serial.println(F("Starting"));
   // 1-wire locate devices on the bus
   Serial.print("Locating devices...");
@@ -310,7 +315,6 @@ void loop() {
   if ( millis() - StarTimeLight > timelight ) {
     StarTimeLight = millis();
     lcd.noBacklight(); // turn off backlight
-    SendHC2(); //Test pour envois HC12
     posMenu = 0;
   }
 
@@ -327,6 +331,13 @@ void loop() {
   // Si flag execution actif + dans la durée d'execution, on fait tourner le moteur
   //Serial.print(FlagStart);
   Start_Moteur();
+
+  //Evois data to BDD
+  if ( ( millis() - lastTimeSend > five ) ){
+    SendHC2(); //Test pour envois HC12
+    lastTimeSend=millis();
+  }
+  
 
 
 
