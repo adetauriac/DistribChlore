@@ -61,10 +61,9 @@ char *b;
 
 // =======================================================================
 // Your config below!
-// =======================================================================
-//const char* ssid     = "FREENONO007";  // SSID of local network
-const char* ssid     = "TP-LINK_302B27";
-const char* password = "fffff00000nono007";             // Password on network
+// ======================================================================
+const char* ssid     = "*************";
+const char* password = "**************";             // Password on network
 long utcOffset = -2;
 
 String result;
