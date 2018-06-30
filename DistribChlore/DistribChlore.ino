@@ -18,6 +18,7 @@
 // Date and time functions using a DS3231 RTC connected via I2C and Wire lib
 #include "TachesDistrib.h"
 #include <Wire.h>
+#include <SoftwareSerial.h>
 #include "RTClib.h"
 #include <TimerOne.h>
 #include <LiquidCrystal_I2C.h>
@@ -90,6 +91,7 @@ long correction, remainingTime, lastDistributionTime , elapsedLightTime, lastAct
 
 // Definition RTC
 RTC_DS3231 rtc;
+DateTime now;
 
 
 //char daysOfTheWeek[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
@@ -140,6 +142,13 @@ const int PinSW = 10;  // Used for the push button switch
 // Updated by the ISR (Interrupt Service Routine)
 volatile int virtualPosition = 1000;
 volatile int lastPosition = 1000;
+
+
+//Pin pour diffusion HF via HC12
+byte rxPin = 11;  // Sur le HC12 c'est la pin TX
+byte txPin = 12;  // Sur le HC12 c'est la pin RX
+byte setPin = 9;
+SoftwareSerial hc12(rxPin , txPin);
 
 
 // ------------------------------------------------------------------
@@ -214,6 +223,14 @@ void setup() {
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
 
+  //Config Emetteur/Recepteur HC12
+  pinMode(setPin,OUTPUT);
+  digitalWrite(setPin,LOW); // passage en mode commande
+  hc12.begin(9600); // Passage du module sur le canal 1, en 9600bps et Ã  20dBm
+  hc12.print(F("AT+DEFAULT")); // Délais pour que le module traite la commande 
+  delay(100);
+  digitalWrite(setPin,HIGH); // passage en mode transparent
+
   // initialisation de l'afficheur
   lcd.init(); // initialisation de l'afficheur
   lcd.backlight();
@@ -272,7 +289,8 @@ void setup() {
   //Load EEPROM pour recharger les configs
   LoadConfig_EEPROM();
   //Configuration manuelle des taches
-  //Tache[0].set_global(0,23,0,2,1);
+  //Tache[0].set_global(0,23,0,2,1)
+  DateTime now = rtc.now();
 
 }
 
@@ -292,6 +310,7 @@ void loop() {
   if ( millis() - StarTimeLight > timelight ) {
     StarTimeLight = millis();
     lcd.noBacklight(); // turn off backlight
+    SendHC2(); //Test pour envois HC12
     posMenu = 0;
   }
 
@@ -304,12 +323,42 @@ void loop() {
   }
 
   //Parcour tableau des jours configuréspour execution si on est sur un nouveau jour
+  Test_Taches();
+  // Si flag execution actif + dans la durée d'execution, on fait tourner le moteur
+  //Serial.print(FlagStart);
+  Start_Moteur();
 
+
+
+
+  //FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP
+}
+
+
+void Test_Taches() {
+  DateTime now = rtc.now();
+  //Serial.println(F("Input Test Tache"));
 
   if ( FlagStart == 0 ) {  // Test si tache active, uniquement si la tache precedente n'est plus en cours
+    //Serial.print(F("Input Test Tache IF FlagStart"));
+//    Serial.print(F("Date Jour : "));
+//    Serial.println( now.dayOfTheWeek());
+//    Serial.print(F("Heure : "));
+//    Serial.println( now.hour());
+
+
+
     for (byte i = 0 ; i < NbTaches ; i++)  //parcourir le tableau de jour configuré pour distribution
     {
-
+//      Serial.print(F("Date config : "));
+//      Serial.println( Tache[i].get_date());
+//      Serial.print(F("Date heure : "));
+//      Serial.println( Tache[i].get_heure());
+//      Serial.print(F("Date minute : "));
+//      Serial.println( Tache[i].get_minute());
+//      Serial.print(F("Date Status : "));
+//      Serial.println( Tache[i].get_status());
+      
       //Delais_Moteur = ( ((long)Tache[8].get_nbDose()) * ((long)TimeDose) ) * 1000; // TO DO fonction pour convertir nb dose avec temps pour 1 dose et passage en milliseconde (*1000)
 
       //Si tache "i" n'a pas encore été réalisé ET
@@ -318,7 +367,7 @@ void loop() {
       //  + date et heure correte
       //  + Tache activée
       //  ==> on active la distribution
-      if ( !TachesDone[i] && (now.dayOfTheWeek() == Tache[i].get_date()) && Tache[i].get_status() && now.hour() == Tache[i].get_heure() && now.minute() == Tache[i].get_minute() ) { //&& now.minute() == Tache[i].get_minute()  ) {
+      if ( TachesDone[i] == 0 && (now.dayOfTheWeek() == Tache[i].get_date()) && Tache[i].get_status() && now.hour() == Tache[i].get_heure() && now.minute() == Tache[i].get_minute() ) { //&& now.minute() == Tache[i].get_minute()  ) {
         Serial.print(F("Nous sommes un "));
         //Serial.println(daysOfTheWeek[now.dayOfTheWeek()]);
         Serial.print(F("Lancement "));
@@ -327,7 +376,7 @@ void loop() {
         Delais_Moteur = Tache[i].get_nbDose() * TimeDose * 1000;; // TO DO fonction pour convertir nb dose avec temps pour 1 dose
         remainingTime = Delais_Moteur;
         Serial.print(Delais_Moteur);
-        //On indique que le tache a été jouée pour la journée en cour
+        //On indique que le tache a été jouée pour la journée en cours
         TachesDone[i] = true;
         StartTime = millis();
         lastActionTime = StartTime;
@@ -335,10 +384,11 @@ void loop() {
       }
     }
   }
+}
 
-  // Si flag execution actif + dans la durée d'execution, on fait tourner le moteur
 
-  //Serial.print(FlagStart);
+//Execute Moteur
+ void Start_Moteur(){
   if (FlagStart == 1  ) { //Pour indiquer que le moteur doit tourner en automatique
     //Serial.print("If FlagStart 1 on test le timing");
 
@@ -367,12 +417,7 @@ void loop() {
     }
   }
 
-
-
-
-  //FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP FIN LOOP
 }
-
 
 // function to print a device address
 void printAddress(DeviceAddress deviceAddress)
@@ -387,7 +432,7 @@ void printAddress(DeviceAddress deviceAddress)
 
 
 
-void navigation() {
+void navigation() { //Navigation 1 étage
   if ( virtualPosition != lastPosition) {
     lcd.backlight();
     StarTimeLight = millis();
@@ -972,23 +1017,23 @@ String Convert_Bool(bool val) {
 
 void SaveConfig_EEPROM() {
 
-  //  Serial.println("Save EEPROM");
+    Serial.println(F("Save EEPROM"));
   for (byte compteur = 0 ; compteur <= NbTaches ; compteur++)
   {
     configuration.TacheEEPROM[compteur] = Tache[compteur];
 
-    Serial.print(F("Save Conf num "));
-    Serial.print(compteur);
-    Serial.print(F(" : "));
-    Serial.print(configuration.TacheEEPROM[compteur].get_date());
-    Serial.print(F(" / "));
-    Serial.print(configuration.TacheEEPROM[compteur].get_heure());
-    Serial.print(F(":"));
-    Serial.print(configuration.TacheEEPROM[compteur].get_minute());
-    Serial.print(F(" / "));
-    Serial.print(configuration.TacheEEPROM[compteur].get_nbDose());
-    Serial.print(F(" / "));
-    Serial.println(configuration.TacheEEPROM[compteur].get_status());
+    //Serial.print(F("Save Conf num "));
+    //Serial.print(compteur);
+    //Serial.print(F(" : "));
+    //Serial.print(configuration.TacheEEPROM[compteur].get_date());
+    //Serial.print(F(" / "));
+    //Serial.print(configuration.TacheEEPROM[compteur].get_heure());
+    //Serial.print(F(":"));
+    //Serial.print(configuration.TacheEEPROM[compteur].get_minute());
+    //Serial.print(F(" / "));
+    //Serial.print(configuration.TacheEEPROM[compteur].get_nbDose());
+    //Serial.print(F(" / "));
+    //Serial.println(configuration.TacheEEPROM[compteur].get_status());
   }
   configuration.DoseEEPROM = Dose;
   configuration.TimeDoseEEPROM = TimeDose;
@@ -999,7 +1044,7 @@ void SaveConfig_EEPROM() {
 
 void LoadConfig_EEPROM() {
 
-  Serial.println("Read EEPROM");
+  Serial.println(F("Read EEPROM"));
   EEPROM_readAnything(0, configuration);
   byte compteur;
   for ( compteur = 0 ; compteur < NbTaches ; compteur++)
@@ -1011,18 +1056,18 @@ void LoadConfig_EEPROM() {
     Tache[compteur].set_status(configuration.TacheEEPROM[compteur].get_status());
 
 
-    Serial.print(F("EEPROM Conf num "));
-    Serial.print(compteur);
-    Serial.print(F(" : "));
-    Serial.print(Tache[compteur].get_date());
-    Serial.print(F(" / "));
-    Serial.print(Tache[compteur].get_heure());
-    Serial.print(F(":"));
-    Serial.print(Tache[compteur].get_minute());
-    Serial.print(F(" / "));
-    Serial.print(Tache[compteur].get_nbDose());
-    Serial.print(F(" / "));
-    Serial.println(Tache[compteur].get_status());
+    //Serial.print(F("EEPROM Conf num "));
+    //Serial.print(compteur);
+    //Serial.print(F(" : "));
+    //Serial.print(Tache[compteur].get_date());
+    //Serial.print(F(" / "));
+    //Serial.print(Tache[compteur].get_heure());
+    //Serial.print(F(":"));
+    //Serial.print(Tache[compteur].get_minute());
+    //Serial.print(F(" / "));
+    //Serial.print(Tache[compteur].get_nbDose());
+    //Serial.print(F(" / "));
+    //Serial.println(Tache[compteur].get_status());
   }
   Dose = configuration.TimeDoseEEPROM;
   TimeDose = configuration.TimeDoseEEPROM;
@@ -1030,7 +1075,63 @@ void LoadConfig_EEPROM() {
 }
 
 
+void SendHC2() {
+  
+     //Serial.println("Temp :" + Temperature);
+     //Serial.print("Amp :"); 
+     //Serial.println(courant_efficace);
+     //Serial.println( "mA" );
+     //Serial.print("Tension :");
+     //Serial.println(vin,2);
+     //msg="Temp :" + Temperature +"/Courant :"+courant_efficace+"mA/Tension:"+vin;
+     //msg="Temp :" + Temperature;
+      sensors.requestTemperatures(); // It responds almost immediately. Let's print out the data
+      TempC = printTemperature(insideThermometer); // Use a simple function to print out the data
+      TempClock = rtc.getTemperature(); // temperatur boitier
+      now=rtc.now();
+      Serial.println(F("Envois HC12"));
+      char msg[100] = {'\0'};
+
+
+
+     String str;
+        
+       // lcd.print (now.day() / 10, DEC);
+       // lcd.print (now.day() % 10, DEC);
+
+    str=String(now.year())+'-'+ String(now.month())+'-'+String(now.day())+" "+ String(now.hour()) +":"+String(now.minute()) +":"+ String(now.second());
+     Serial.println(str);
+        
+    char charBuf[22];
+    str.toCharArray(charBuf, 22); 
+    String MonMsg = Msg("%s|0|1|C00:%s|C01:%s|\n", charBuf, TempC, TempClock);
+      
+
+
+     Serial.println(MonMsg);
+     hc12.print(MonMsg); //send data via HC12
+
+     
+     //Serial.println(String(now.month()) + "/" + String(now.day()) + "/" + String(now.year()) + " " + String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second()) );
+     //Serial.println(String(now.year()) );
+
+     
+}
+
+
+String Msg(char *Type, char *date, float Mesure1, float Mesure2)
+{
+char Mes1[6] = { '\0' };
+char Mes2[6] = { '\0' };
+char buffer[30] = {'\0'};
+dtostrf(Mesure1,5,2,Mes1);
+dtostrf(Mesure2,5,2,Mes2);
+snprintf(buffer,100, Type,date,Mes1,Mes2);
+return buffer;
+}
 
 
 
 
+//END 
+ 
